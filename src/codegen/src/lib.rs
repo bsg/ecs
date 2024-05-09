@@ -1,5 +1,5 @@
-#[macro_use]
 extern crate lazy_static;
+use lazy_static::lazy_static;
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -19,13 +19,13 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
     let id = NEXT_COMPONENT_ID.fetch_add(1, Ordering::Relaxed);
 
     quote! {
-        #struct_vis impl #struct_generics Component for #struct_ident #struct_generics {
-            fn info(&self) -> ComponentInfo {
-                ComponentInfo::new(ComponentId(#id), std::mem::size_of::<Self>())
+        #struct_vis impl #struct_generics ecs::component::Component for #struct_ident #struct_generics {
+            fn info(&self) -> ecs::component::ComponentInfo {
+                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>())
             }
 
-            fn info_static() -> ComponentInfo {
-                ComponentInfo::new(ComponentId(#id), std::mem::size_of::<Self>())
+            fn info_static() -> ecs::component::ComponentInfo {
+                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>())
             }
         }
     }

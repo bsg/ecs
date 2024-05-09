@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use crate as ecs;
     use codegen::Component;
 
     use crate::{
-        component::{Component, ComponentId, ComponentInfo},
         Entity, World,
     };
 

@@ -1,20 +1,19 @@
 extern crate codegen;
+pub use codegen::Component;
 
-pub use codegen::*;
-
+pub mod component;
 mod archetype;
-mod component;
 mod store;
 mod test;
 
-use std::{collections::HashMap, ops::Deref};
-
-use archetype::Archetype;
 use component::Component;
+use archetype::Archetype;
 use store::Store;
 
+use std::{collections::HashMap, ops::Deref};
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub(crate) struct Entity(usize);
+pub struct Entity(usize);
 
 impl Deref for Entity {
     type Target = usize;
@@ -22,6 +21,10 @@ impl Deref for Entity {
     fn deref(&self) -> &usize {
         &self.0
     }
+}
+
+pub trait System<Args> {
+    fn run(&mut self, world: &mut World);
 }
 
 macro_rules! impl_system {
@@ -48,10 +51,6 @@ macro_rules! impl_system {
     };
 }
 
-trait System<Args> {
-    fn run(&mut self, world: &mut World);
-}
-
 impl_system!(T1);
 impl_system!(T1, T2);
 impl_system!(T1, T2, T3);
@@ -69,7 +68,7 @@ impl_system!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
 impl_system!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
 impl_system!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
 
-struct World {
+pub struct World {
     entities: Vec<Option<(Archetype, Entity)>>,
     stores: HashMap<Archetype, (Store, usize)>,
 }
