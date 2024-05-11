@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate as ecs;
+    use crate::{self as ecs};
     use codegen::Component;
 
     use crate::{
@@ -13,8 +13,12 @@ mod tests {
     #[derive(Component)]
     struct B(bool);
 
+    // FIXME this fails. string probably gets dropped after C is written to store
+    // #[derive(Component)]
+    // struct C(Option<String>);
+
     #[derive(Component)]
-    struct C<'a>(Option<&'a str>);
+    struct C(Option<&'static str>);
 
     #[test]
     fn get_component() {
@@ -51,9 +55,9 @@ mod tests {
         world.spawn(&[&A(10u32), &C(Some("10"))]);
 
         let mut count = 0;
-        world.run(|c1: &mut A, c2: &mut C| {
-            assert_eq!(Some(c1.0.to_string().as_str()), c2.0);
-            c1.0 = 123;
+        world.run(|a: &mut A, c: &C| {
+            assert_eq!(Some(a.0.to_string().as_str()), c.0);
+            a.0 = 123;
             count += 1;
         });
         assert_eq!(count, 3);
@@ -61,5 +65,29 @@ mod tests {
         world.run(|c1: &mut A| {
             assert_eq!(c1.0, 123);
         });
+    }
+
+    #[test]
+    fn query_with_optional() {
+        let mut world = World::new();
+
+        world.spawn(&[&B(true), &A(1)]);
+        world.spawn(&[&B(true)]);
+        world.spawn(&[&B(true), &A(5)]);
+        world.spawn(&[&B(true)]);
+
+        world.run(|_: &B, a: Option<&mut A>| {
+            if let Some(a) = a {
+                a.0 = 4;
+            }
+        });
+
+        let mut sum = 0;
+        world.run(|_: &B, a: Option<&A>| {
+            if let Some(a) = a {
+                sum += a.0;
+            }
+        });
+        assert_eq!(sum, 8);
     }
 }

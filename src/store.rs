@@ -1,6 +1,6 @@
 use std::{collections::HashMap, mem, ptr::null_mut};
 
-use crate::component::{Component, ComponentId};
+use crate::component::{Component, ComponentId, ComponentInfo};
 
 struct ComponentList {
     data: *mut u8,
@@ -68,19 +68,11 @@ pub(crate) struct Store {
     data: HashMap<ComponentId, ComponentList>,
 }
 
-#[allow(dead_code)]
 impl Store {
     pub fn new() -> Self {
         Store {
             data: HashMap::new(),
         }
-    }
-
-    unsafe fn get_component_ptr<T: Component + 'static>(&self, entity_index: usize) -> *mut u8 {
-        self.data
-            .get(&T::info_static().id())
-            .unwrap()
-            .get_ptr(entity_index)
     }
 
     pub unsafe fn read<T: Component + 'static>(&self, entity_index: usize) -> &T {
@@ -95,6 +87,21 @@ impl Store {
             .get(&T::info_static().id())
             .unwrap()
             .read_mut::<T>(entity_index)
+    }
+
+    pub unsafe fn try_read<T: Component + 'static>(&self, entity_index: usize) -> Option<&T> {
+        self.data
+            .get(&T::info_static().id())
+            .map(|list| list.read::<T>(entity_index))
+    }
+
+    pub unsafe fn try_read_mut<T: Component + 'static>(
+        &self,
+        entity_index: usize,
+    ) -> Option<&mut T> {
+        self.data
+            .get(&T::info_static().id())
+            .map(|list| list.read_mut::<T>(entity_index))
     }
 
     pub unsafe fn write<T: Component + 'static>(&mut self, entity_index: usize, val: T) {
@@ -112,17 +119,18 @@ impl Store {
 
     pub unsafe fn write_any(
         &mut self,
-        component_id: ComponentId,
-        component_size: usize,
+        component_info: ComponentInfo,
         entity_index: usize,
         val: &dyn Component,
     ) {
-        if self.data.get(&component_id).is_none() {
-            self.data
-                .insert(component_id, ComponentList::new(component_size));
+        if self.data.get(&component_info.id()).is_none() {
+            self.data.insert(
+                component_info.id(),
+                ComponentList::new(component_info.size()),
+            );
         }
         self.data
-            .get_mut(&component_id)
+            .get_mut(&component_info.id())
             .unwrap()
             .write_any(entity_index, val);
     }
@@ -130,15 +138,15 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
+    use super::{ComponentList, Store};
     use crate::{self as ecs, component::Component};
     use codegen::Component;
-    use super::{ComponentList, Store};
 
     #[derive(Component)]
     struct A(u32);
 
     #[derive(Component)]
-    struct B<'a>(&'a str);
+    struct B(String);
 
     #[test]
     fn list_write_read() {
@@ -159,11 +167,11 @@ mod tests {
         let mut store = Store::new();
         unsafe {
             store.write(0, A(100u32));
-            store.write(0, B("100"));
+            store.write(0, B("100".to_string()));
             store.write(1, A(101u32));
-            store.write(1, B("101"));
+            store.write(1, B("101".to_string()));
             store.write(100000, A(102u32));
-            store.write(100000, B("102"));
+            store.write(100000, B("102".to_string()));
 
             assert_eq!(store.read::<A>(0).0, 100u32);
             assert_eq!(store.read::<B>(0).0, "100");
