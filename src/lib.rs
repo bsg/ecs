@@ -10,7 +10,7 @@ use archetype::Archetype;
 use component::{Component, ComponentInfo};
 use store::Store;
 
-use std::{collections::HashMap, marker::PhantomData, ops::Deref};
+use std::{collections::HashMap, ops::Deref};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Entity(usize);
@@ -23,56 +23,66 @@ impl Deref for Entity {
     }
 }
 
-pub trait QueryParam<T: Component> {
+trait QueryParam<'a, T: Component, A> {
     fn info() -> ComponentInfo;
-    fn is_optional() -> bool;
+    fn access(store: &'a Store, index: usize) -> A;
+    fn match_archetype(archetype: &Archetype) -> bool;
 }
 
-impl<T: Component> QueryParam<T> for &T {
+impl<'a, T: Component + 'static> QueryParam<'a, T, &'a T> for &'a T {
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
-    fn is_optional() -> bool {
-        false
+    fn access(store: &'a Store, index: usize) -> &'a T {
+        unsafe { store.read::<T>(index) }
+    }
+
+    fn match_archetype(archetype: &Archetype) -> bool {
+        archetype.contains(T::info_static())
     }
 }
 
-impl<T: Component> QueryParam<T> for &mut T {
+impl<'a, T: Component + 'static> QueryParam<'a, T, &'a mut T> for &'a mut T {
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
-    fn is_optional() -> bool {
-        false
+    fn access(store: &'a Store, index: usize) -> &'a mut T {
+        unsafe { store.read_mut::<T>(index) }
+    }
+
+    fn match_archetype(archetype: &Archetype) -> bool {
+        archetype.contains(T::info_static())
     }
 }
 
-impl<T: Component> QueryParam<T> for Option<&T> {
+impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a T>> for Option<&'a T> {
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
-    fn is_optional() -> bool {
+    fn access(store: &'a Store, index: usize) -> Option<&'a T> {
+        unsafe { store.try_read::<T>(index) }
+    }
+
+    fn match_archetype(_: &Archetype) -> bool {
         true
     }
 }
 
-impl<T: Component> QueryParam<T> for Option<&mut T> {
+impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a mut T>> for Option<&'a mut T> {
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
-    fn is_optional() -> bool {
+    fn access(store: &'a Store, index: usize) -> Option<&'a mut T> {
+        unsafe { store.try_read_mut::<T>(index) }
+    }
+
+    fn match_archetype(_: &Archetype) -> bool {
         true
     }
-}
-
-#[allow(dead_code)]
-pub struct Access<'a, T: Component> {
-    store: &'a Store,
-    index: usize,
-    marker: PhantomData<T>,
 }
 
 pub trait System<'a, Params> {
@@ -80,20 +90,20 @@ pub trait System<'a, Params> {
 }
 
 macro_rules! impl_system {
-    ($(($access:ident, $type:ident)),+) => {
-        impl<'a, $($access,)+ $($type,)+ F> System<'a, ($($access,)+ $($type,)+)> for F
+    ($(($param:ident, $type:ident)),+) => {
+        impl<'a, $($param,)+ $($type,)+ F> System<'a, ($($param,)+ $($type,)+)> for F
         where
             $($type: Component,)+
-            $($access: QueryParam<$type> + From<Access<'a, $type>>,)+
-            F: FnMut($($access,)+),
+            $($param: QueryParam<'a, $type, $param>,)+
+            F: FnMut($($param,)+),
         {
             fn run(&mut self, world: &'a mut World) {
                 for (archetype, (store, store_len)) in world.stores.iter_mut() {
-                    if $(($access::is_optional() || archetype.contains($access::info()))) &&+ && true {
+                    if $($param::match_archetype(archetype)) &&+ && true {
                         let mut item_idx = 0;
                         while item_idx < *store_len {
                             self(
-                                $(Access::<$type> { store, index: item_idx, marker: PhantomData }.into(),)+
+                                $($param::access(store, item_idx),)+
                             );
                             item_idx += 1;
                         }
@@ -111,16 +121,141 @@ impl_system!((A1, T1), (A2, T2), (A3, T3));
 impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4));
 impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5));
 impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7), (A8, T8));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7), (A8, T8), (A9, T9));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7), (A8, T8), (A9, T9), (A10, T10));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7), (A8, T8), (A9, T9), (A10, T10), (A11, T11));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7), (A8, T8), (A9, T9), (A10, T10), (A11, T11), (A12, T12));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7), (A8, T8), (A9, T9), (A10, T10), (A11, T11), (A12, T12), (A13, T13));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7), (A8, T8), (A9, T9), (A10, T10), (A11, T11), (A12, T12), (A13, T13), (A14, T14));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7), (A8, T8), (A9, T9), (A10, T10), (A11, T11), (A12, T12), (A13, T13), (A14, T14), (A15, T15));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6), (A7, T7), (A8, T8), (A9, T9), (A10, T10), (A11, T11), (A12, T12), (A13, T13), (A14, T14), (A15, T15), (A16, T16));
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7)
+);
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7),
+    (A8, T8)
+);
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7),
+    (A8, T8),
+    (A9, T9)
+);
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7),
+    (A8, T8),
+    (A9, T9),
+    (A10, T10)
+);
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7),
+    (A8, T8),
+    (A9, T9),
+    (A10, T10),
+    (A11, T11)
+);
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7),
+    (A8, T8),
+    (A9, T9),
+    (A10, T10),
+    (A11, T11),
+    (A12, T12)
+);
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7),
+    (A8, T8),
+    (A9, T9),
+    (A10, T10),
+    (A11, T11),
+    (A12, T12),
+    (A13, T13)
+);
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7),
+    (A8, T8),
+    (A9, T9),
+    (A10, T10),
+    (A11, T11),
+    (A12, T12),
+    (A13, T13),
+    (A14, T14)
+);
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7),
+    (A8, T8),
+    (A9, T9),
+    (A10, T10),
+    (A11, T11),
+    (A12, T12),
+    (A13, T13),
+    (A14, T14),
+    (A15, T15)
+);
+impl_system!(
+    (A1, T1),
+    (A2, T2),
+    (A3, T3),
+    (A4, T4),
+    (A5, T5),
+    (A6, T6),
+    (A7, T7),
+    (A8, T8),
+    (A9, T9),
+    (A10, T10),
+    (A11, T11),
+    (A12, T12),
+    (A13, T13),
+    (A14, T14),
+    (A15, T15),
+    (A16, T16)
+);
 
 pub struct World {
     entities: Vec<Option<(Archetype, Entity)>>,
