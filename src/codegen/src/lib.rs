@@ -6,7 +6,7 @@ use quote::quote;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 lazy_static! {
-    static ref NEXT_COMPONENT_ID: AtomicU32 = AtomicU32::new(0);
+    static ref NEXT_COMPONENT_ID: AtomicU32 = AtomicU32::new(1); // 0 is reserved
 }
 
 #[proc_macro_derive(Component)]

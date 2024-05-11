@@ -7,10 +7,10 @@ mod store;
 mod test;
 
 use archetype::Archetype;
-use component::{Component, ComponentInfo};
+use component::{Component, ComponentId, ComponentInfo};
 use store::Store;
 
-use std::{collections::HashMap, ops::Deref};
+use std::{collections::HashMap, mem, ops::Deref};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Entity(usize);
@@ -20,6 +20,19 @@ impl Deref for Entity {
 
     fn deref(&self) -> &usize {
         &self.0
+    }
+}
+
+impl Component for Entity {
+    fn info(&self) -> ComponentInfo {
+        ComponentInfo::new(ComponentId(0), mem::size_of::<Entity>())
+    }
+
+    fn info_static() -> ComponentInfo
+    where
+        Self: Sized,
+    {
+        ComponentInfo::new(ComponentId(0), mem::size_of::<Entity>())
     }
 }
 
@@ -258,8 +271,8 @@ impl_system!(
 );
 
 pub struct World {
-    entities: Vec<Option<(Archetype, Entity)>>,
-    stores: HashMap<Archetype, (Store, usize)>,
+    entities: Vec<Option<(Archetype, Entity)>>, // FIXME 'Entity' here is store index
+    stores: HashMap<Archetype, (Store, usize)>, // TODO move nrows into store
 }
 
 #[allow(dead_code)]
@@ -272,24 +285,27 @@ impl World {
     }
 
     pub fn spawn(&mut self, bundle: &[&dyn Component]) -> Entity {
+        let entity = Entity(self.entities.len());
         let mut archetype = Archetype::new();
 
         for component in bundle {
             unsafe { archetype.set(component.info()) };
         }
+        unsafe { archetype.set(Entity::info_static()) };
 
         if !self.stores.contains_key(&archetype) {
             self.stores.insert(archetype.clone(), (Store::new(), 0));
         }
 
         let (store, nrows) = self.stores.get_mut(&archetype).unwrap();
+        unsafe { store.write::<Entity>(*nrows, entity) };
         for component in bundle {
             unsafe { store.write_any(component.info(), *nrows, *component) };
         }
         self.entities.push(Some((archetype, Entity(*nrows))));
         (*nrows) += 1;
 
-        Entity(self.entities.len() - 1)
+        entity
     }
 
     pub fn get_component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {

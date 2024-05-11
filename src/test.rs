@@ -90,4 +90,21 @@ mod tests {
         });
         assert_eq!(sum, 8);
     }
+
+    #[test]
+    fn query_with_entity() {
+        let mut world = World::new();
+
+        world.spawn(&[&B(true), &A(1)]);
+        world.spawn(&[&B(true)]);
+        world.spawn(&[&B(true), &A(5)]);
+        world.spawn(&[&B(true)]);
+
+        let mut sum = 0;
+        world.run(|entity: &Entity, _: &B| {
+            sum += **entity;
+        });
+
+        assert_eq!(sum, 6);
+    }
 }
