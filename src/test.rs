@@ -3,9 +3,7 @@ mod tests {
     use crate::{self as ecs};
     use codegen::Component;
 
-    use crate::{
-        Entity, World,
-    };
+    use crate::{Entity, World};
 
     #[derive(Component)]
     struct A(u32);
@@ -22,13 +20,23 @@ mod tests {
 
     #[test]
     fn get_component() {
-        let mut world = World::new();
+        let world = World::new();
 
         let entity_ref = world.spawn(&[&A(42u32), &B(false), &C(Some("a"))]);
         assert_eq!(entity_ref.0, 0);
 
-        let (_, index) = world.entities.get(0).unwrap().clone().unwrap();
-        assert_eq!(index, Entity(0));
+        let (_, index) = unsafe {
+            world
+                .entities
+                .get()
+                .as_ref()
+                .unwrap()
+                .get(0)
+                .unwrap()
+                .clone()
+                .unwrap()
+        };
+        assert_eq!(index, 0);
 
         assert_eq!(world.get_component::<A>(Entity(0)).unwrap().0, 42);
         assert_eq!(world.get_component::<B>(Entity(0)).unwrap().0, false);
@@ -48,7 +56,7 @@ mod tests {
 
     #[test]
     fn query() {
-        let mut world = World::new();
+        let world = World::new();
 
         world.spawn(&[&A(1u32), &C(Some("1"))]);
         world.spawn(&[&A(2u32), &C(Some("2")), &B(true)]);
@@ -69,7 +77,7 @@ mod tests {
 
     #[test]
     fn query_with_optional() {
-        let mut world = World::new();
+        let world = World::new();
 
         world.spawn(&[&B(true), &A(1)]);
         world.spawn(&[&B(true)]);
@@ -93,7 +101,7 @@ mod tests {
 
     #[test]
     fn query_with_entity() {
-        let mut world = World::new();
+        let world = World::new();
 
         world.spawn(&[&B(true), &A(1)]);
         world.spawn(&[&B(true)]);
@@ -106,5 +114,57 @@ mod tests {
         });
 
         assert_eq!(sum, 6);
+    }
+
+    #[test]
+    fn spawn_inside_system() {
+        let world = World::new();
+
+        world.spawn(&[&C("1".into())]);
+        world.spawn(&[&C("2".into())]);
+        world.spawn(&[&C("3".into())]);
+
+        world.run(|c: &C| {
+            world.spawn(&[&A(str::parse::<u32>(c.0.unwrap()).unwrap())]);
+        });
+
+        let mut sum = 0;
+        world.run(|a: &A| {
+            sum += a.0;
+        });
+
+        assert_eq!(sum, 6);
+    }
+
+    #[test]
+    fn spawn_inside_system_subset() {
+        let world = World::new();
+
+        world.spawn(&[&A(1), &C("1".into())]);
+        world.spawn(&[&A(2), &C("2".into())]);
+        world.spawn(&[&A(3), &C("3".into())]);
+
+        world.run(|c: &C| {
+            world.spawn(&[&A(str::parse::<u32>(c.0.unwrap()).unwrap() * 10)]);
+        });
+
+        let mut sum = 0;
+        world.run(|a: &A| {
+            sum += a.0;
+        });
+
+        assert_eq!(sum, 66);
+    }
+
+    #[test]
+    #[should_panic]
+    fn spawn_inside_system_should_panic() {
+        let world = World::new();
+
+        world.spawn(&[&A(1)]);
+
+        world.run(|_: &A| {
+            world.spawn(&[&A(1)]);
+        });
     }
 }

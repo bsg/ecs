@@ -34,9 +34,22 @@ impl Archetype {
             false
         }
     }
+    
+    fn contains_id(&self, id: &ComponentId) -> bool {
+        self.component_ids.contains(id)
+    }
 
     pub fn contains(&self, info: ComponentInfo) -> bool {
-        self.component_ids.contains(&info.id())
+        self.contains_id(&info.id())
+    }
+
+    pub fn is_subset_of(&self, other: &Archetype) -> bool {
+        for id in self.component_ids.iter() {
+            if !other.contains_id(id) {
+                return false;
+            }
+        }
+        true
     }
 
     pub fn size(&self) -> usize {

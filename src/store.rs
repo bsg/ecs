@@ -8,7 +8,6 @@ struct ComponentList {
     cap: usize,
 }
 
-// TODO aliasing
 impl ComponentList {
     pub fn new(item_size: usize) -> Self {
         ComponentList {

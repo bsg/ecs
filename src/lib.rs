@@ -10,7 +10,7 @@ use archetype::Archetype;
 use component::{Component, ComponentId, ComponentInfo};
 use store::Store;
 
-use std::{collections::HashMap, mem, ops::Deref};
+use std::{cell::UnsafeCell, collections::HashMap, mem, ops::Deref};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Entity(usize);
@@ -99,7 +99,7 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a mut T>> for Option
 }
 
 pub trait System<'a, Params> {
-    fn run(&mut self, world: &'a mut World);
+    fn run(&mut self, world: &'a World);
 }
 
 macro_rules! impl_system {
@@ -110,15 +110,23 @@ macro_rules! impl_system {
             $($param: QueryParam<'a, $type, $param>,)+
             F: FnMut($($param,)+),
         {
-            fn run(&mut self, world: &'a mut World) {
-                for (archetype, (store, store_len)) in world.stores.iter_mut() {
-                    if $($param::match_archetype(archetype)) &&+ && true {
-                        let mut item_idx = 0;
-                        while item_idx < *store_len {
-                            self(
-                                $($param::access(store, item_idx),)+
-                            );
-                            item_idx += 1;
+            fn run(&mut self, world: &'a World) {
+                unsafe {
+                    for (archetype, (store, store_len)) in world.stores.get().as_mut().unwrap().iter_mut() {
+                        if $($param::match_archetype(archetype)) &&+ && true {
+                            let mut lock = Archetype::new();
+                            $(if *($param::info().id()) != 0 {lock.set($param::info());}) // FIXME don't hardcode the ignored id check
+                            **world.lock.get().as_mut().unwrap() = Some(lock);
+
+                            let mut item_idx = 0;
+                            while item_idx < *store_len {
+                                self(
+                                    $($param::access(store, item_idx),)+
+                                );
+                                item_idx += 1;
+                            }
+
+                            *world.lock.get().as_mut().unwrap() = None;
                         }
                     }
                 }
@@ -271,66 +279,112 @@ impl_system!(
 );
 
 pub struct World {
-    entities: Vec<Option<(Archetype, Entity)>>, // FIXME 'Entity' here is store index
-    stores: HashMap<Archetype, (Store, usize)>, // TODO move nrows into store
+    // TODO group these into one UnsafeCell<Inner>
+    entities: UnsafeCell<Vec<Option<(Archetype, usize)>>>,
+    stores: UnsafeCell<HashMap<Archetype, (Store, usize)>>, // TODO move nrows into store
+    lock: UnsafeCell<Option<Archetype>>,
 }
 
 #[allow(dead_code)]
 impl World {
     pub fn new() -> Self {
         World {
-            entities: Vec::new(),
-            stores: HashMap::new(),
+            entities: UnsafeCell::new(Vec::new()),
+            stores: UnsafeCell::new(HashMap::new()),
+            lock: UnsafeCell::new(None),
         }
     }
 
-    pub fn spawn(&mut self, bundle: &[&dyn Component]) -> Entity {
-        let entity = Entity(self.entities.len());
-        let mut archetype = Archetype::new();
+    pub fn spawn(&self, bundle: &[&dyn Component]) -> Entity {
+        unsafe {
+            let entity = Entity(self.entities.get().as_ref().unwrap().len());
+            let mut archetype = Archetype::new();
 
-        for component in bundle {
-            unsafe { archetype.set(component.info()) };
+            for component in bundle {
+                archetype.set(component.info());
+            }
+
+            if let Some(lock) = self.lock.get().as_ref().unwrap() {
+                if lock.is_subset_of(&archetype) {
+                    panic!("")
+                }
+            }
+
+            archetype.set(Entity::info_static());
+
+            if !self.stores.get().as_ref().unwrap().contains_key(&archetype) {
+                self.stores
+                    .get()
+                    .as_mut()
+                    .unwrap()
+                    .insert(archetype.clone(), (Store::new(), 0));
+            }
+
+            let (store, nrows) = self
+                .stores
+                .get()
+                .as_mut()
+                .unwrap()
+                .get_mut(&archetype)
+                .unwrap();
+            store.write::<Entity>(*nrows, entity);
+            for component in bundle {
+                store.write_any(component.info(), *nrows, *component);
+            }
+            self.entities
+                .get()
+                .as_mut()
+                .unwrap()
+                .push(Some((archetype, *nrows)));
+            (*nrows) += 1;
+
+            entity
         }
-        unsafe { archetype.set(Entity::info_static()) };
-
-        if !self.stores.contains_key(&archetype) {
-            self.stores.insert(archetype.clone(), (Store::new(), 0));
-        }
-
-        let (store, nrows) = self.stores.get_mut(&archetype).unwrap();
-        unsafe { store.write::<Entity>(*nrows, entity) };
-        for component in bundle {
-            unsafe { store.write_any(component.info(), *nrows, *component) };
-        }
-        self.entities.push(Some((archetype, Entity(*nrows))));
-        (*nrows) += 1;
-
-        entity
     }
 
     pub fn get_component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
-        if let Some(Some((archetype, index))) = self.entities.get(entity.0) {
-            Some(unsafe { self.stores.get(archetype).unwrap().0.read::<T>(**index) })
-        } else {
-            None
+        unsafe {
+            if let Some(Some((archetype, index))) =
+                self.entities.get().as_ref().unwrap().get(entity.0)
+            {
+                Some(
+                    self.stores
+                        .get()
+                        .as_ref()
+                        .unwrap()
+                        .get(archetype)
+                        .unwrap()
+                        .0
+                        .read::<T>(*index),
+                )
+            } else {
+                None
+            }
         }
     }
 
-    pub fn get_component_mut<T: Component + 'static>(&mut self, entity: Entity) -> Option<&mut T> {
-        if let Some(Some((archetype, index))) = self.entities.get(entity.0) {
-            Some(unsafe {
-                self.stores
-                    .get_mut(archetype)
-                    .unwrap()
-                    .0
-                    .read_mut::<T>(**index)
-            })
-        } else {
-            None
+    pub fn get_component_mut<T: Component + 'static>(&self, entity: Entity) -> Option<&mut T> {
+        unsafe {
+            if let Some(Some((archetype, index))) =
+                self.entities.get().as_ref().unwrap().get(entity.0)
+            {
+                Some(
+                    self.stores
+                        .get()
+                        .as_mut()
+                        .unwrap()
+                        .get_mut(archetype)
+                        .unwrap()
+                        .0
+                        .read_mut::<T>(*index),
+                )
+            } else {
+                None
+            }
         }
     }
 
-    pub fn run<'a, Params>(&'a mut self, mut f: impl System<'a, Params>) {
+    pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params>) {
         f.run(self)
     }
 }
