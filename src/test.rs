@@ -55,6 +55,15 @@ mod tests {
     }
 
     #[test]
+    fn get_nonexisting_component() {
+        let world = World::new();
+
+        let e = world.spawn(&[&A(42u32)]);
+        assert!(world.get_component::<B>(e).is_none());
+        assert!(world.get_component_mut::<B>(e).is_none());
+    }
+
+    #[test]
     fn query() {
         let world = World::new();
 

@@ -364,16 +364,14 @@ impl World {
             if let Some(Some((archetype, index))) =
                 self.entities.get().as_ref().unwrap().get(*entity)
             {
-                Some(
-                    self.stores
-                        .get()
-                        .as_ref()
-                        .unwrap()
-                        .get(archetype)
-                        .unwrap()
-                        .0
-                        .read::<T>(*index),
-                )
+                self.stores
+                    .get()
+                    .as_ref()
+                    .unwrap()
+                    .get(archetype)
+                    .unwrap()
+                    .0
+                    .try_read::<T>(*index)
             } else {
                 None
             }
@@ -385,16 +383,14 @@ impl World {
             if let Some(Some((archetype, index))) =
                 self.entities.get().as_ref().unwrap().get(*entity)
             {
-                Some(
-                    self.stores
-                        .get()
-                        .as_mut()
-                        .unwrap()
-                        .get_mut(archetype)
-                        .unwrap()
-                        .0
-                        .read_mut::<T>(*index),
-                )
+                self.stores
+                    .get()
+                    .as_mut()
+                    .unwrap()
+                    .get_mut(archetype)
+                    .unwrap()
+                    .0
+                    .try_read_mut::<T>(*index)
             } else {
                 None
             }
