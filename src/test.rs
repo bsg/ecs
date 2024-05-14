@@ -166,15 +166,21 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn spawn_inside_system_should_panic() {
+    fn spawn_inside_system_same_archetype() {
         let world = World::new();
 
         world.spawn(&[&A(1)]);
 
         world.run(|_: &A| {
-            world.spawn(&[&A(1)]);
+            world.spawn(&[&A(2)]);
         });
+
+        let mut sum = 0;
+        world.run(|a: &A| {
+            sum += a.0;
+        });
+
+        assert_eq!(sum, 3);
     }
 
     #[test]

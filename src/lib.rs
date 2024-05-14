@@ -114,12 +114,9 @@ macro_rules! impl_system {
                 unsafe {
                     for (archetype, (store, store_len)) in world.stores.get().as_mut().unwrap().iter_mut() {
                         if $($param::match_archetype(archetype)) &&+ && true {
-                            let mut lock = Archetype::new();
-                            $(if *($param::info().id()) != 0 {lock.set($param::info());}) // FIXME don't hardcode the ignored id check
-                            **world.lock.get().as_mut().unwrap() = Some(lock);
-
                             let mut item_idx = 0;
-                            while item_idx < *store_len {
+                            let len = *store_len;
+                            while item_idx < len {
                                 if **store.read::<Entity>(item_idx) > 0 {
                                     self(
                                         $($param::access(store, item_idx),)+
@@ -127,8 +124,6 @@ macro_rules! impl_system {
                                 }
                                 item_idx += 1;
                             }
-
-                            *world.lock.get().as_mut().unwrap() = None;
                         }
                     }
                 }
@@ -284,7 +279,6 @@ pub struct World {
     // TODO group these into one UnsafeCell<Inner>
     entities: UnsafeCell<Vec<Option<(Archetype, usize)>>>,
     stores: UnsafeCell<HashMap<Archetype, (Store, usize)>>, // TODO move nrows into store
-    lock: UnsafeCell<Option<Archetype>>,
 }
 
 #[allow(dead_code)]
@@ -293,7 +287,6 @@ impl World {
         World {
             entities: UnsafeCell::new(vec![None]),
             stores: UnsafeCell::new(HashMap::new()),
-            lock: UnsafeCell::new(None),
         }
     }
 
@@ -304,12 +297,6 @@ impl World {
 
             for component in bundle {
                 archetype.set(component.info());
-            }
-
-            if let Some(lock) = self.lock.get().as_ref().unwrap() {
-                if lock.is_subset_of(&archetype) {
-                    panic!("")
-                }
             }
 
             archetype.set(Entity::info_static());
