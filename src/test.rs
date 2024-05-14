@@ -23,7 +23,7 @@ mod tests {
         let world = World::new();
 
         let entity_ref = world.spawn(&[&A(42u32), &B(false), &C(Some("a"))]);
-        assert_eq!(entity_ref.0, 0);
+        assert_eq!(entity_ref.0, 1);
 
         let (_, index) = unsafe {
             world
@@ -31,27 +31,27 @@ mod tests {
                 .get()
                 .as_ref()
                 .unwrap()
-                .get(0)
+                .get(1)
                 .unwrap()
                 .clone()
                 .unwrap()
         };
         assert_eq!(index, 0);
 
-        assert_eq!(world.get_component::<A>(Entity(0)).unwrap().0, 42);
-        assert_eq!(world.get_component::<B>(Entity(0)).unwrap().0, false);
-        assert_eq!(world.get_component::<C>(Entity(0)).unwrap().0, Some("a"));
+        assert_eq!(world.get_component::<A>(Entity(1)).unwrap().0, 42);
+        assert_eq!(world.get_component::<B>(Entity(1)).unwrap().0, false);
+        assert_eq!(world.get_component::<C>(Entity(1)).unwrap().0, Some("a"));
 
         // repeat in different order
-        assert_eq!(world.get_component::<C>(Entity(0)).unwrap().0, Some("a"));
-        assert_eq!(world.get_component::<B>(Entity(0)).unwrap().0, false);
-        assert_eq!(world.get_component::<A>(Entity(0)).unwrap().0, 42);
+        assert_eq!(world.get_component::<C>(Entity(1)).unwrap().0, Some("a"));
+        assert_eq!(world.get_component::<B>(Entity(1)).unwrap().0, false);
+        assert_eq!(world.get_component::<A>(Entity(1)).unwrap().0, 42);
 
-        world.get_component_mut::<A>(Entity(0)).unwrap().0 = 123u32;
-        world.get_component_mut::<B>(Entity(0)).unwrap().0 = true;
+        world.get_component_mut::<A>(Entity(1)).unwrap().0 = 123u32;
+        world.get_component_mut::<B>(Entity(1)).unwrap().0 = true;
 
-        assert_eq!(world.get_component::<A>(Entity(0)).unwrap().0, 123u32);
-        assert_eq!(world.get_component::<B>(Entity(0)).unwrap().0, true);
+        assert_eq!(world.get_component::<A>(Entity(1)).unwrap().0, 123u32);
+        assert_eq!(world.get_component::<B>(Entity(1)).unwrap().0, true);
     }
 
     #[test]
@@ -110,7 +110,7 @@ mod tests {
 
         let mut sum = 0;
         world.run(|entity: &Entity, _: &B| {
-            sum += **entity;
+            sum += **entity - 1;
         });
 
         assert_eq!(sum, 6);
@@ -166,5 +166,24 @@ mod tests {
         world.run(|_: &A| {
             world.spawn(&[&A(1)]);
         });
+    }
+
+    #[test]
+    fn despawn() {
+        let world = World::new();
+
+        world.spawn(&[&A(1)]);
+        world.spawn(&[&A(2)]);
+        let e = world.spawn(&[&A(3)]);
+        world.spawn(&[&A(4)]);
+
+        world.despawn(e);
+
+        let mut sum = 0;
+        world.run(|a: &A| {
+            sum += a.0;
+        });
+
+        assert_eq!(sum, 7);
     }
 }

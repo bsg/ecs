@@ -120,9 +120,11 @@ macro_rules! impl_system {
 
                             let mut item_idx = 0;
                             while item_idx < *store_len {
-                                self(
-                                    $($param::access(store, item_idx),)+
-                                );
+                                if **store.read::<Entity>(item_idx) > 0 {
+                                    self(
+                                        $($param::access(store, item_idx),)+
+                                    );
+                                }
                                 item_idx += 1;
                             }
 
@@ -289,7 +291,7 @@ pub struct World {
 impl World {
     pub fn new() -> Self {
         World {
-            entities: UnsafeCell::new(Vec::new()),
+            entities: UnsafeCell::new(vec![None]),
             stores: UnsafeCell::new(HashMap::new()),
             lock: UnsafeCell::new(None),
         }
@@ -342,10 +344,25 @@ impl World {
         }
     }
 
+    pub fn despawn(&self, entity: Entity) {
+        if let Some(e) = self.get_component_mut::<Entity>(entity) {
+            *e = Entity(0);
+            unsafe {
+                *self
+                    .entities
+                    .get()
+                    .as_mut()
+                    .unwrap()
+                    .get_mut(*entity)
+                    .unwrap() = None
+            };
+        }
+    }
+
     pub fn get_component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
         unsafe {
             if let Some(Some((archetype, index))) =
-                self.entities.get().as_ref().unwrap().get(entity.0)
+                self.entities.get().as_ref().unwrap().get(*entity)
             {
                 Some(
                     self.stores
@@ -366,7 +383,7 @@ impl World {
     pub fn get_component_mut<T: Component + 'static>(&self, entity: Entity) -> Option<&mut T> {
         unsafe {
             if let Some(Some((archetype, index))) =
-                self.entities.get().as_ref().unwrap().get(entity.0)
+                self.entities.get().as_ref().unwrap().get(*entity)
             {
                 Some(
                     self.stores
