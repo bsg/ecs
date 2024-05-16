@@ -112,10 +112,10 @@ macro_rules! impl_system {
         {
             fn run(&mut self, world: &'a World) {
                 unsafe {
-                    for (archetype, (store, store_len)) in world.stores.get().as_mut().unwrap().iter_mut() {
+                    for (archetype, store) in world.stores.get().as_mut().unwrap().iter_mut() {
                         if $($param::match_archetype(archetype)) &&+ && true {
                             let mut item_idx = 0;
-                            let len = *store_len;
+                            let len = store.len();
                             while item_idx < len {
                                 if **store.read::<Entity>(item_idx) > 0 {
                                     self(
@@ -278,7 +278,7 @@ impl_system!(
 pub struct World {
     // TODO group these into one UnsafeCell<Inner>
     entities: UnsafeCell<Vec<Option<(Archetype, usize)>>>,
-    stores: UnsafeCell<HashMap<Archetype, (Store, usize)>>, // TODO move nrows into store
+    stores: UnsafeCell<HashMap<Archetype, Store>>,
 }
 
 #[allow(dead_code)]
@@ -306,35 +306,47 @@ impl World {
                     .get()
                     .as_mut()
                     .unwrap()
-                    .insert(archetype.clone(), (Store::new(), 0));
+                    .insert(archetype.clone(), Store::new());
             }
 
-            let (store, nrows) = self
+            let store = self
                 .stores
                 .get()
                 .as_mut()
                 .unwrap()
                 .get_mut(&archetype)
                 .unwrap();
-            store.write::<Entity>(*nrows, entity);
+            let index = store.reserve_index();
+            store.write::<Entity>(index, entity);
             for component in bundle {
-                store.write_any(component.info(), *nrows, *component);
+                store.write_any(component.info(), index, *component);
             }
             self.entities
                 .get()
                 .as_mut()
                 .unwrap()
-                .push(Some((archetype, *nrows)));
-            (*nrows) += 1;
+                .push(Some((archetype, index)));
 
             entity
         }
     }
 
     pub fn despawn(&self, entity: Entity) {
-        if let Some(e) = self.get_component_mut::<Entity>(entity) {
-            *e = Entity(0);
-            unsafe {
+        unsafe {
+            if let Some(Some((archetype, index))) =
+                self.entities.get().as_mut().unwrap().get(*entity)
+            {
+                let store = self
+                    .stores
+                    .get()
+                    .as_mut()
+                    .unwrap()
+                    .get_mut(archetype)
+                    .unwrap();
+
+                *store.try_read_mut::<Entity>(*index).unwrap() = Entity(0);
+                store.free_index(*index);
+
                 *self
                     .entities
                     .get()
@@ -342,7 +354,7 @@ impl World {
                     .unwrap()
                     .get_mut(*entity)
                     .unwrap() = None
-            };
+            }
         }
     }
 
@@ -357,7 +369,6 @@ impl World {
                     .unwrap()
                     .get(archetype)
                     .unwrap()
-                    .0
                     .try_read::<T>(*index)
             } else {
                 None
@@ -376,7 +387,6 @@ impl World {
                     .unwrap()
                     .get_mut(archetype)
                     .unwrap()
-                    .0
                     .try_read_mut::<T>(*index)
             } else {
                 None

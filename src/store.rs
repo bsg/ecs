@@ -1,4 +1,8 @@
-use std::{collections::HashMap, mem, ptr::null_mut};
+use std::{
+    collections::{BTreeSet, HashMap},
+    mem,
+    ptr::null_mut,
+};
 
 use crate::component::{Component, ComponentId, ComponentInfo};
 
@@ -65,13 +69,35 @@ impl ComponentList {
 
 pub(crate) struct Store {
     data: HashMap<ComponentId, ComponentList>,
+    end_index: usize,
+    free_indices: BTreeSet<usize>,
 }
 
 impl Store {
     pub fn new() -> Self {
         Store {
             data: HashMap::new(),
+            end_index: 0,
+            free_indices: BTreeSet::new()
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.end_index
+    }
+
+    pub fn reserve_index(&mut self) -> usize {
+        if let Some(index) = self.free_indices.pop_first() {
+            index
+        } else {
+            let index = self.end_index;
+            self.end_index += 1;
+            index
+        }
+    }
+
+    pub fn free_index(&mut self, index: usize) {
+        self.free_indices.insert(index);
     }
 
     pub unsafe fn read<T: Component + 'static>(&self, entity_index: usize) -> &T {
