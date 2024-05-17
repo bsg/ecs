@@ -6,7 +6,7 @@ use std::{
 
 use crate::component::{Component, ComponentId, ComponentInfo};
 
-struct ComponentList {
+pub(crate) struct ComponentList {
     data: *mut u8,
     item_size: usize,
     cap: usize,
@@ -40,30 +40,28 @@ impl ComponentList {
         }
     }
 
-    unsafe fn get_ptr(&self, idx: usize) -> *mut u8 {
-        self.data.add(self.item_size * idx)
-    }
-
+    #[inline(always)]
     pub unsafe fn read<T: Component + 'static>(&self, idx: usize) -> &T {
-        let ptr = self.get_ptr(idx);
-        ptr.cast::<T>().as_ref().unwrap()
+        &*self.data.add(self.item_size * idx).cast::<T>()
     }
 
+    #[inline(always)]
     pub unsafe fn read_mut<T: Component + 'static>(&self, idx: usize) -> &mut T {
-        let ptr = self.get_ptr(idx);
-        ptr.cast::<T>().as_mut().unwrap()
+        &mut *self.data.add(self.item_size * idx).cast::<T>()
     }
 
+    #[inline(always)]
     pub unsafe fn write<T: Component + 'static>(&mut self, idx: usize, val: T) {
         self.grow(idx);
-        let ptr = self.get_ptr(idx);
-        ptr.cast::<T>().write(val);
+        self.data.add(self.item_size * idx).cast::<T>().write(val);
     }
 
+    #[inline(always)]
     pub unsafe fn write_any(&mut self, idx: usize, val: &dyn Component) {
         self.grow(idx);
-        let ptr = self.data.add(self.item_size * idx);
-        ptr.copy_from_nonoverlapping(mem::transmute_copy(&val), val.info().size());
+        self.data
+            .add(self.item_size * idx)
+            .copy_from_nonoverlapping(mem::transmute_copy(&val), val.info().size());
     }
 }
 
@@ -78,7 +76,7 @@ impl Store {
         Store {
             data: HashMap::new(),
             end_index: 0,
-            free_indices: BTreeSet::new()
+            free_indices: BTreeSet::new(),
         }
     }
 
@@ -158,6 +156,10 @@ impl Store {
             .get_mut(&component_info.id())
             .unwrap()
             .write_any(entity_index, val);
+    }
+
+    pub unsafe fn get_component_list<T: Component + 'static>(&self) -> Option<&ComponentList> {
+        self.data.get(&T::info_static().id())
     }
 }
 

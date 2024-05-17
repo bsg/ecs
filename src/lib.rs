@@ -8,11 +8,16 @@ mod test;
 
 use archetype::Archetype;
 use component::{Component, ComponentId, ComponentInfo};
-use store::Store;
+use store::{ComponentList, Store};
 
-use std::{cell::UnsafeCell, collections::HashMap, mem, ops::Deref};
+use std::{
+    cell::UnsafeCell,
+    collections::{BTreeSet, HashMap},
+    mem,
+    ops::Deref,
+};
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Entity(usize);
 
 impl Deref for Entity {
@@ -38,7 +43,7 @@ impl Component for Entity {
 
 trait QueryParam<'a, T: Component, A> {
     fn info() -> ComponentInfo;
-    fn access(store: &'a Store, index: usize) -> A;
+    fn access(list: Option<&'a ComponentList>, index: usize) -> A;
     fn match_archetype(archetype: &Archetype) -> bool;
 }
 
@@ -47,8 +52,9 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, &'a T> for &'a T {
         T::info_static()
     }
 
-    fn access(store: &'a Store, index: usize) -> &'a T {
-        unsafe { store.read::<T>(index) }
+    #[inline(always)]
+    fn access(store: Option<&'a ComponentList>, index: usize) -> &'a T {
+        unsafe { store.unwrap_unchecked().read::<T>(index) }
     }
 
     fn match_archetype(archetype: &Archetype) -> bool {
@@ -61,8 +67,9 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, &'a mut T> for &'a mut T {
         T::info_static()
     }
 
-    fn access(store: &'a Store, index: usize) -> &'a mut T {
-        unsafe { store.read_mut::<T>(index) }
+    #[inline(always)]
+    fn access(store: Option<&'a ComponentList>, index: usize) -> &'a mut T {
+        unsafe { store.unwrap_unchecked().read_mut::<T>(index) }
     }
 
     fn match_archetype(archetype: &Archetype) -> bool {
@@ -75,8 +82,9 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a T>> for Option<&'a
         T::info_static()
     }
 
-    fn access(store: &'a Store, index: usize) -> Option<&'a T> {
-        unsafe { store.try_read::<T>(index) }
+    #[inline(always)]
+    fn access(store: Option<&'a ComponentList>, index: usize) -> Option<&'a T> {
+        unsafe { store.map(|list| list.read::<T>(index)) }
     }
 
     fn match_archetype(_: &Archetype) -> bool {
@@ -89,8 +97,9 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a mut T>> for Option
         T::info_static()
     }
 
-    fn access(store: &'a Store, index: usize) -> Option<&'a mut T> {
-        unsafe { store.try_read_mut::<T>(index) }
+    #[inline(always)]
+    fn access(store: Option<&'a ComponentList>, index: usize) -> Option<&'a mut T> {
+        unsafe { store.map(|list| list.read_mut::<T>(index)) }
     }
 
     fn match_archetype(_: &Archetype) -> bool {
@@ -103,10 +112,10 @@ pub trait System<'a, Params> {
 }
 
 macro_rules! impl_system {
-    ($(($param:ident, $type:ident)),+) => {
+    ($(($param:ident, $type:ident, $list:ident)),+) => {
         impl<'a, $($param,)+ $($type,)+ F> System<'a, ($($param,)+ $($type,)+)> for F
         where
-            $($type: Component,)+
+            $($type: Component + 'static,)+
             $($param: QueryParam<'a, $type, $param>,)+
             F: FnMut($($param,)+),
         {
@@ -116,10 +125,12 @@ macro_rules! impl_system {
                         if $($param::match_archetype(archetype)) &&+ && true {
                             let mut item_idx = 0;
                             let len = store.len();
+                            let entities = store.get_component_list::<Entity>().unwrap();
+                            $(let $list = store.get_component_list::<$type>();)+
                             while item_idx < len {
-                                if **store.read::<Entity>(item_idx) > 0 {
+                                if entities.read::<Entity>(item_idx).0 != 0 {
                                     self(
-                                        $($param::access(store, item_idx),)+
+                                        $($param::access($list, item_idx),)+
                                     );
                                 }
                                 item_idx += 1;
@@ -133,166 +144,186 @@ macro_rules! impl_system {
 }
 
 // FIXME there is a better way to do this using a proc_macro but i'm too tired
-impl_system!((A1, T1));
-impl_system!((A1, T1), (A2, T2));
-impl_system!((A1, T1), (A2, T2), (A3, T3));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5));
-impl_system!((A1, T1), (A2, T2), (A3, T3), (A4, T4), (A5, T5), (A6, T6));
+impl_system!((A1, T1, r1));
+impl_system!((A1, T1, r1), (A2, T2, r2));
+impl_system!((A1, T1, r1), (A2, T2, r2), (A3, T3, r3));
+impl_system!((A1, T1, r1), (A2, T2, r2), (A3, T3, r3), (A4, T4, r4));
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5)
 );
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7),
-    (A8, T8)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6)
 );
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7),
-    (A8, T8),
-    (A9, T9)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7)
 );
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7),
-    (A8, T8),
-    (A9, T9),
-    (A10, T10)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7),
+    (A8, T8, r8)
 );
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7),
-    (A8, T8),
-    (A9, T9),
-    (A10, T10),
-    (A11, T11)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7),
+    (A8, T8, r8),
+    (A9, T9, r9)
 );
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7),
-    (A8, T8),
-    (A9, T9),
-    (A10, T10),
-    (A11, T11),
-    (A12, T12)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7),
+    (A8, T8, r8),
+    (A9, T9, r9),
+    (A10, T10, r10)
 );
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7),
-    (A8, T8),
-    (A9, T9),
-    (A10, T10),
-    (A11, T11),
-    (A12, T12),
-    (A13, T13)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7),
+    (A8, T8, r8),
+    (A9, T9, r9),
+    (A10, T10, r10),
+    (A11, T11, r11)
 );
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7),
-    (A8, T8),
-    (A9, T9),
-    (A10, T10),
-    (A11, T11),
-    (A12, T12),
-    (A13, T13),
-    (A14, T14)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7),
+    (A8, T8, r8),
+    (A9, T9, r9),
+    (A10, T10, r10),
+    (A11, T11, r11),
+    (A12, T12, r12)
 );
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7),
-    (A8, T8),
-    (A9, T9),
-    (A10, T10),
-    (A11, T11),
-    (A12, T12),
-    (A13, T13),
-    (A14, T14),
-    (A15, T15)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7),
+    (A8, T8, r8),
+    (A9, T9, r9),
+    (A10, T10, r10),
+    (A11, T11, r11),
+    (A12, T12, r12),
+    (A13, T13, r13)
 );
 impl_system!(
-    (A1, T1),
-    (A2, T2),
-    (A3, T3),
-    (A4, T4),
-    (A5, T5),
-    (A6, T6),
-    (A7, T7),
-    (A8, T8),
-    (A9, T9),
-    (A10, T10),
-    (A11, T11),
-    (A12, T12),
-    (A13, T13),
-    (A14, T14),
-    (A15, T15),
-    (A16, T16)
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7),
+    (A8, T8, r8),
+    (A9, T9, r9),
+    (A10, T10, r10),
+    (A11, T11, r11),
+    (A12, T12, r12),
+    (A13, T13, r13),
+    (A14, T14, r14)
+);
+impl_system!(
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7),
+    (A8, T8, r8),
+    (A9, T9, r9),
+    (A10, T10, r10),
+    (A11, T11, r11),
+    (A12, T12, r12),
+    (A13, T13, r13),
+    (A14, T14, r14),
+    (A15, T15, r15)
+);
+impl_system!(
+    (A1, T1, r1),
+    (A2, T2, r2),
+    (A3, T3, r3),
+    (A4, T4, r4),
+    (A5, T5, r5),
+    (A6, T6, r6),
+    (A7, T7, r7),
+    (A8, T8, r8),
+    (A9, T9, r9),
+    (A10, T10, r10),
+    (A11, T11, r11),
+    (A12, T12, r12),
+    (A13, T13, r13),
+    (A14, T14, r14),
+    (A15, T15, r15),
+    (A16, T16, r16)
 );
 
 pub struct World {
     // TODO group these into one UnsafeCell<Inner>
     entities: UnsafeCell<Vec<Option<(Archetype, usize)>>>,
     stores: UnsafeCell<HashMap<Archetype, Store>>,
+    free_entities: UnsafeCell<BTreeSet<Entity>>,
 }
 
 #[allow(dead_code)]
 impl World {
     pub fn new() -> Self {
         World {
-            entities: UnsafeCell::new(vec![None]),
+            // Entity(0) is used to mark deleted columns
+            entities: UnsafeCell::new(vec![None]), 
             stores: UnsafeCell::new(HashMap::new()),
+            free_entities: UnsafeCell::new(BTreeSet::new()),
         }
     }
 
     pub fn spawn(&self, bundle: &[&dyn Component]) -> Entity {
         unsafe {
-            let entity = Entity(self.entities.get().as_ref().unwrap().len());
+            let entity = match self.free_entities.get().as_mut().unwrap().pop_first() {
+                Some(e) => e,
+                None => Entity(self.entities.get().as_ref().unwrap().len()),
+            };
+
             let mut archetype = Archetype::new();
 
             for component in bundle {
@@ -321,11 +352,15 @@ impl World {
             for component in bundle {
                 store.write_any(component.info(), index, *component);
             }
-            self.entities
-                .get()
-                .as_mut()
-                .unwrap()
-                .push(Some((archetype, index)));
+            match self.entities.get().as_mut().unwrap().get_mut(*entity) {
+                Some(p) => *p = Some((archetype, index)),
+                None => self
+                    .entities
+                    .get()
+                    .as_mut()
+                    .unwrap()
+                    .push(Some((archetype, index))),
+            }
 
             entity
         }
@@ -333,6 +368,10 @@ impl World {
 
     pub fn despawn(&self, entity: Entity) {
         unsafe {
+            if entity == Entity(0) {
+                return;
+            }
+
             if let Some(Some((archetype, index))) =
                 self.entities.get().as_mut().unwrap().get(*entity)
             {
@@ -344,7 +383,7 @@ impl World {
                     .get_mut(archetype)
                     .unwrap();
 
-                *store.try_read_mut::<Entity>(*index).unwrap() = Entity(0);
+                *store.read_mut::<Entity>(*index) = Entity(0);
                 store.free_index(*index);
 
                 *self
@@ -353,7 +392,9 @@ impl World {
                     .as_mut()
                     .unwrap()
                     .get_mut(*entity)
-                    .unwrap() = None
+                    .unwrap() = None;
+
+                self.free_entities.get().as_mut().unwrap().insert(entity);
             }
         }
     }

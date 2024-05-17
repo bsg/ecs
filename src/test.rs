@@ -201,4 +201,19 @@ mod tests {
 
         assert_eq!(sum, 7);
     }
+
+    #[test]
+    fn reuse_entity() {
+        let world = World::new();
+
+        world.spawn(&[&A(1)]);
+        world.spawn(&[&A(2)]);
+        world.spawn(&[&A(3)]);
+        world.spawn(&[&A(4)]);
+        world.spawn(&[&A(5)]);
+
+        world.despawn(Entity(3));
+        assert_eq!(world.spawn(&[&A(3)]), Entity(3));
+        assert_eq!(world.spawn(&[&A(6)]), Entity(6));
+    }
 }
