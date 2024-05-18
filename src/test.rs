@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{self as ecs, Res, ResMut};
+    use crate::{self as ecs, Res, ResMut, With, Without};
     use codegen::{Component, Resource};
 
     use crate::{Entity, World};
@@ -239,4 +239,27 @@ mod tests {
             assert_eq!((*r).0, 123);
         });
     }
+
+    #[test]
+    fn with_without() {
+        let world = World::new();
+
+        world.spawn(&[&A(1), &B(false)]);
+        world.spawn(&[&A(2)]);
+        world.spawn(&[&A(3), &B(false)]);
+        world.spawn(&[&A(4)]);
+
+        let mut sum = 0;
+        world.run(|a: &A, _: Without<B>| {
+            sum += a.0;
+        });
+        assert_eq!(sum, 6);
+
+        let mut sum = 0;
+        world.run(|a: &A, _: With<B>| {
+            sum += a.0;
+        });
+        assert_eq!(sum, 4);
+    }
+
 }

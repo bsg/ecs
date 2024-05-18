@@ -14,6 +14,7 @@ use std::{
     any::{Any, TypeId},
     cell::UnsafeCell,
     collections::{BTreeSet, HashMap},
+    marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
 };
@@ -172,6 +173,48 @@ impl<'a, T: Resource + 'static> QueryParam<'a, T, ResMut<'a, T>> for ResMut<'_, 
 
     fn match_archetype(_: &Archetype) -> bool {
         true
+    }
+}
+
+pub struct With<T: Component> {
+    marker: PhantomData<T>,
+}
+
+impl<'a, T: Component + 'static> QueryParam<'a, T, With<T>> for With<T> {
+    fn info() -> ComponentInfo {
+        T::info_static()
+    }
+
+    #[inline(always)]
+    fn access(_: &'a World, _: Option<&'a ComponentList>, _: usize) -> With<T> {
+        With {
+            marker: PhantomData::default(),
+        }
+    }
+
+    fn match_archetype(archetype: &Archetype) -> bool {
+        archetype.contains(T::info_static())
+    }
+}
+
+pub struct Without<T: Component> {
+    marker: PhantomData<T>,
+}
+
+impl<'a, T: Component + 'static> QueryParam<'a, T, Without<T>> for Without<T> {
+    fn info() -> ComponentInfo {
+        T::info_static()
+    }
+
+    #[inline(always)]
+    fn access(_: &'a World, _: Option<&'a ComponentList>, _: usize) -> Without<T> {
+        Without {
+            marker: PhantomData::default(),
+        }
+    }
+
+    fn match_archetype(archetype: &Archetype) -> bool {
+        !archetype.contains(T::info_static())
     }
 }
 
