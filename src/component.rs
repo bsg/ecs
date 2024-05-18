@@ -25,7 +25,6 @@ pub struct ComponentInfo {
 }
 
 impl ComponentInfo {
-    #[allow(dead_code)] // used in a proc macro
     pub fn new(id: ComponentId, size: usize) -> Self {
         ComponentInfo { id, size: u32::try_from(size).expect("Component size too large") }
     }
