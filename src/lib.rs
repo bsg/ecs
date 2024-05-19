@@ -1,5 +1,6 @@
 extern crate codegen;
 pub use codegen::Component;
+pub use codegen::Resource;
 
 mod archetype;
 pub mod component;
