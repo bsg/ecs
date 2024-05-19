@@ -40,11 +40,11 @@ pub fn derive_resource(item: TokenStream) -> TokenStream {
 
     quote! {
         impl #generics ecs::Resource for #ident #generics {
-            fn as_any<'a>(&'a self) -> &'a dyn core::any::Any {
+            fn as_any(&self) -> &dyn core::any::Any {
                 self
             }
             
-            fn as_mut_any<'a>(&'a mut self) -> &'a mut dyn core::any::Any {
+            fn as_mut_any(&mut self) -> &mut dyn core::any::Any {
                 self
             }
         }

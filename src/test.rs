@@ -22,7 +22,7 @@ mod tests {
     // struct C(Option<String>);
 
     #[derive(Component)]
-    struct C(Option<&'static str>);
+    struct C<'a>(Option<&'a str>);
 
     #[test]
     fn get_component() {
@@ -261,5 +261,4 @@ mod tests {
         });
         assert_eq!(sum, 4);
     }
-
 }
