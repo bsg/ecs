@@ -26,7 +26,7 @@ pub trait Resource {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Entity(usize);
+pub struct Entity(pub usize);
 
 impl Deref for Entity {
     type Target = usize;
@@ -221,6 +221,7 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, Without<T>> for Without<T> {
 
 pub trait System<'a, Params> {
     fn run(&mut self, world: &'a World);
+    fn run_on_slice(&mut self, world: &'a World, slice: usize, total_slices: usize);
 }
 
 macro_rules! impl_system {
@@ -235,11 +236,33 @@ macro_rules! impl_system {
                 unsafe {
                     for (archetype, store) in world.stores_mut().iter_mut() {
                         if $($param::match_archetype(archetype)) &&+ && true {
-                            let mut item_idx = 0;
                             let len = store.len();
+                            let mut item_idx = 0;
                             let entities = store.get_component_list::<Entity>().unwrap();
                             $(let $list = store.get_component_list::<$type>();)+
                             while item_idx < len {
+                                if entities.read::<Entity>(item_idx).0 != 0 {
+                                    self(
+                                        $($param::access(world, $list, item_idx),)+
+                                    );
+                                }
+                                item_idx += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            fn run_on_slice(&mut self, world: &'a World, slice: usize, total_slices: usize) {
+                unsafe {
+                    for (archetype, store) in world.stores_mut().iter_mut() {
+                        if $($param::match_archetype(archetype)) &&+ && true {
+                            let len = store.len();
+                            let per_slice = if len / total_slices == 0 {store.len()} else {len / total_slices};
+                            let mut item_idx = per_slice * slice;
+                            let entities = store.get_component_list::<Entity>().unwrap();
+                            $(let $list = store.get_component_list::<$type>();)+
+                            while item_idx < len && item_idx < per_slice * (slice + 1) {
                                 if entities.read::<Entity>(item_idx).0 != 0 {
                                     self(
                                         $($param::access(world, $list, item_idx),)+
@@ -422,6 +445,8 @@ pub struct World {
     inner: UnsafeCell<WorldInner>,
 }
 
+unsafe impl Sync for World {}
+
 #[allow(dead_code)]
 impl World {
     pub fn new() -> Self {
@@ -561,5 +586,19 @@ impl World {
 
     pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params>) {
         f.run(self)
+    }
+
+    pub unsafe fn run_parallel<'a, Params>(
+        &'a self,
+        f: impl System<'a, Params> + Send + Sync + Copy,
+    ) {
+        let num_cores: usize = std::thread::available_parallelism().unwrap().into();
+        std::thread::scope(|s| {
+            for i in 0..num_cores {
+                s.spawn(move || {
+                    f.clone().run_on_slice(self, i.clone(), num_cores);
+                });
+            }
+        });
     }
 }
