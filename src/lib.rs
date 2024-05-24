@@ -411,6 +411,19 @@ impl_system!(
     (A16, T16, r16)
 );
 
+pub struct SpawnBundleItem<'a> {
+    pub component: &'a dyn Component,
+}
+
+#[macro_export]
+macro_rules! entity {
+    ($($item:expr),+) => {
+        &[
+            $(&ecs::SpawnBundleItem {component: &*core::mem::ManuallyDrop::new($item) }),+
+        ]
+    };
+}
+
 struct WorldInner {
     entities: Vec<Option<(Archetype, usize)>>,
     stores: HashMap<Archetype, Store>,
@@ -468,7 +481,7 @@ impl World {
         unsafe { &mut self.inner.get().as_mut().unwrap().resources }
     }
 
-    pub fn spawn(&self, bundle: &[&dyn Component]) -> Entity {
+    pub fn spawn(&self, bundle: &[&SpawnBundleItem]) -> Entity {
         unsafe {
             let entity = match self.free_entities_mut().pop_first() {
                 Some(e) => e,
@@ -477,8 +490,8 @@ impl World {
 
             let mut archetype = Archetype::new();
 
-            for component in bundle {
-                archetype.set(component.info());
+            for item in bundle {
+                archetype.set(item.component.info());
             }
 
             archetype.set(Entity::info_static());
@@ -490,8 +503,8 @@ impl World {
             let store = self.stores_mut().get_mut(&archetype).unwrap();
             let index = store.reserve_index();
             store.write::<Entity>(index, entity);
-            for component in bundle {
-                store.write_any(component.info(), index, *component);
+            for item in bundle {
+                store.write_any(item.component.info(), index, &*item.component);
             }
             match self.entities_mut().get_mut(*entity) {
                 Some(p) => *p = Some((archetype, index)),
