@@ -434,6 +434,10 @@ impl_system!(
     (A16, T16, r16)
 );
 
+pub struct SpawnBundleItem<'a> {
+    pub component: &'a dyn Component,
+}
+
 struct WorldInner {
     entities: Vec<Option<(Archetype, usize)>>,
     stores: HashMap<Archetype, Store>,
@@ -511,16 +515,16 @@ impl World {
             self.stores_mut().insert(archetype.clone(), Store::new());
         }
 
-        let store = self.stores_mut().get_mut(&archetype).unwrap();
-        let index = store.reserve_index();
-        unsafe { store.write::<Entity>(index, entity) };
-        for item in bundle {
-            unsafe { store.write_any(item.info(), index, *item) };
-        }
-        match self.entities_mut().get_mut(*entity) {
-            Some(p) => *p = Some((archetype, index)),
-            None => self.entities_mut().push(Some((archetype, index))),
-        }
+            let store = self.stores_mut().get_mut(&archetype).unwrap();
+            let index = store.reserve_index();
+            unsafe { store.write::<Entity>(index, entity) };
+            for component in bundle {
+                unsafe { store.write_any(component.info(), index, *component) };
+            }
+            match self.entities_mut().get_mut(*entity) {
+                Some(p) => *p = Some((archetype, index)),
+                None => self.entities_mut().push(Some((archetype, index))),
+            }
 
         entity
     }
