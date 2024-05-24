@@ -482,37 +482,35 @@ impl World {
     }
 
     pub fn spawn(&self, bundle: &[&SpawnBundleItem]) -> Entity {
-        unsafe {
-            let entity = match self.free_entities_mut().pop_first() {
-                Some(e) => e,
-                None => Entity(self.entities().len()),
-            };
+        let entity = match self.free_entities_mut().pop_first() {
+            Some(e) => e,
+            None => Entity(self.entities().len()),
+        };
 
-            let mut archetype = Archetype::new();
+        let mut archetype = Archetype::new();
 
-            for item in bundle {
-                archetype.set(item.component.info());
-            }
-
-            archetype.set(Entity::info_static());
-
-            if !self.stores().contains_key(&archetype) {
-                self.stores_mut().insert(archetype.clone(), Store::new());
-            }
-
-            let store = self.stores_mut().get_mut(&archetype).unwrap();
-            let index = store.reserve_index();
-            store.write::<Entity>(index, entity);
-            for item in bundle {
-                store.write_any(item.component.info(), index, &*item.component);
-            }
-            match self.entities_mut().get_mut(*entity) {
-                Some(p) => *p = Some((archetype, index)),
-                None => self.entities_mut().push(Some((archetype, index))),
-            }
-
-            entity
+        for item in bundle {
+            archetype.set(item.component.info());
         }
+
+        archetype.set(Entity::info_static());
+
+        if !self.stores().contains_key(&archetype) {
+            self.stores_mut().insert(archetype.clone(), Store::new());
+        }
+
+        let store = self.stores_mut().get_mut(&archetype).unwrap();
+        let index = store.reserve_index();
+        unsafe { store.write::<Entity>(index, entity) };
+        for item in bundle {
+            unsafe { store.write_any(item.component.info(), index, &*item.component) };
+        }
+        match self.entities_mut().get_mut(*entity) {
+            Some(p) => *p = Some((archetype, index)),
+            None => self.entities_mut().push(Some((archetype, index))),
+        }
+
+        entity
     }
 
     pub fn despawn(&self, entity: Entity) {
