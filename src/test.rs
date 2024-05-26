@@ -31,19 +31,19 @@ mod tests {
         assert_eq!(index, 0);
 
         assert_eq!(world.get_component::<A>(Entity(1)).unwrap().0, 42);
-        assert_eq!(world.get_component::<B>(Entity(1)).unwrap().0, false);
+        assert!(!world.get_component::<B>(Entity(1)).unwrap().0);
         assert_eq!(world.get_component::<C>(Entity(1)).unwrap().0, Some("a"));
 
         // repeat in different order
         assert_eq!(world.get_component::<C>(Entity(1)).unwrap().0, Some("a"));
-        assert_eq!(world.get_component::<B>(Entity(1)).unwrap().0, false);
+        assert!(!world.get_component::<B>(Entity(1)).unwrap().0,);
         assert_eq!(world.get_component::<A>(Entity(1)).unwrap().0, 42);
 
         world.get_component_mut::<A>(Entity(1)).unwrap().0 = 123u32;
         world.get_component_mut::<B>(Entity(1)).unwrap().0 = true;
 
         assert_eq!(world.get_component::<A>(Entity(1)).unwrap().0, 123u32);
-        assert_eq!(world.get_component::<B>(Entity(1)).unwrap().0, true);
+        assert!(world.get_component::<B>(Entity(1)).unwrap().0);
     }
 
     #[test]

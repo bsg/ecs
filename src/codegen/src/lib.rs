@@ -30,7 +30,7 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
 
         impl #generics Clone for #ident #generics {
             fn clone(&self) -> Self {
-                self.clone()
+                *self
             }
         }
 

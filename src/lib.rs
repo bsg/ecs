@@ -149,13 +149,13 @@ impl<'a, T: Resource + 'static> Deref for ResMut<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0
     }
 }
 
 impl<'a, T: Resource + 'static> DerefMut for ResMut<'a, T> {
     fn deref_mut(&mut self) -> &mut T {
-        &mut self.0
+        self.0
     }
 }
 
@@ -189,7 +189,7 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, With<T>> for With<T> {
     #[inline(always)]
     fn access(_: &'a World, _: Option<&'a ComponentList>, _: usize) -> With<T> {
         With {
-            marker: PhantomData::default(),
+            marker: PhantomData,
         }
     }
 
@@ -210,7 +210,7 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, Without<T>> for Without<T> {
     #[inline(always)]
     fn access(_: &'a World, _: Option<&'a ComponentList>, _: usize) -> Without<T> {
         Without {
-            marker: PhantomData::default(),
+            marker: PhantomData,
         }
     }
 
@@ -440,6 +440,7 @@ impl World {
         unsafe { &self.inner.get().as_ref().unwrap().entities }
     }
 
+    #[allow(clippy::mut_from_ref)]
     fn entities_mut(&self) -> &mut Vec<Option<(Archetype, usize)>> {
         unsafe { &mut self.inner.get().as_mut().unwrap().entities }
     }
@@ -448,6 +449,7 @@ impl World {
         unsafe { &self.inner.get().as_ref().unwrap().stores }
     }
 
+    #[allow(clippy::mut_from_ref)]
     fn stores_mut(&self) -> &mut HashMap<Archetype, Store> {
         unsafe { &mut self.inner.get().as_mut().unwrap().stores }
     }
@@ -456,6 +458,7 @@ impl World {
         unsafe { &self.inner.get().as_ref().unwrap().free_entities }
     }
 
+    #[allow(clippy::mut_from_ref)]
     fn free_entities_mut(&self) -> &mut BTreeSet<Entity> {
         unsafe { &mut self.inner.get().as_mut().unwrap().free_entities }
     }
@@ -464,6 +467,7 @@ impl World {
         unsafe { &self.inner.get().as_ref().unwrap().resources }
     }
 
+    #[allow(clippy::mut_from_ref)]
     fn resources_mut(&self) -> &mut HashMap<TypeId, Box<dyn Resource>> {
         unsafe { &mut self.inner.get().as_mut().unwrap().resources }
     }
@@ -561,5 +565,11 @@ impl World {
 
     pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params>) {
         f.run(self)
+    }
+}
+
+impl Default for World {
+    fn default() -> Self {
+        Self::new()
     }
 }

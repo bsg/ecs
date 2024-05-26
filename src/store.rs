@@ -26,14 +26,14 @@ impl ComponentList {
 
         if idx >= self.cap {
             let new_cap = if idx == 0 { INITIAL_CAP } else { idx * 2 };
-            if self.data == null_mut() {
+            if self.data.is_null() {
                 let layout = std::alloc::Layout::array::<u8>(self.item_size * new_cap).unwrap();
                 self.data = std::alloc::alloc(layout);
             } else {
                 let layout = std::alloc::Layout::array::<u8>(self.item_size * self.cap).unwrap();
                 self.data = std::alloc::realloc(self.data, layout, self.item_size * new_cap);
             }
-            if self.data == null_mut() {
+            if self.data.is_null() {
                 todo!()
             }
             self.cap = new_cap;
@@ -45,6 +45,7 @@ impl ComponentList {
         &*self.data.add(self.item_size * idx).cast::<T>()
     }
 
+    #[allow(clippy::mut_from_ref)]
     #[inline(always)]
     pub unsafe fn read_mut<T: Component + 'static>(&self, idx: usize) -> &mut T {
         &mut *self.data.add(self.item_size * idx).cast::<T>()
@@ -105,6 +106,7 @@ impl Store {
             .read::<T>(entity_index)
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn read_mut<T: Component + 'static>(&self, entity_index: usize) -> &mut T {
         self.data
             .get(&T::info_static().id())
