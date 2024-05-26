@@ -173,7 +173,7 @@ mod tests {
     struct A(u32);
 
     #[derive(Component)]
-    struct B(String);
+    struct B(&'static str);
 
     #[test]
     fn list_write_read() {
@@ -194,11 +194,11 @@ mod tests {
         let mut store = Store::new();
         unsafe {
             store.write(0, A(100u32));
-            store.write(0, B("100".to_string()));
+            store.write(0, B("100"));
             store.write(1, A(101u32));
-            store.write(1, B("101".to_string()));
+            store.write(1, B("101"));
             store.write(100000, A(102u32));
-            store.write(100000, B("102".to_string()));
+            store.write(100000, B("102"));
 
             assert_eq!(store.read::<A>(0).0, 100u32);
             assert_eq!(store.read::<B>(0).0, "100");

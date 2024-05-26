@@ -27,6 +27,14 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
                 ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>())
             }
         }
+
+        impl #generics Clone for #ident #generics {
+            fn clone(&self) -> Self {
+                self.clone()
+            }
+        }
+
+        impl #generics Copy for #ident #generics {}
     }
     .into()
 }
@@ -43,7 +51,7 @@ pub fn derive_resource(item: TokenStream) -> TokenStream {
             fn as_any(&self) -> &dyn core::any::Any {
                 self
             }
-            
+
             fn as_mut_any(&mut self) -> &mut dyn core::any::Any {
                 self
             }
