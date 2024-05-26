@@ -30,20 +30,20 @@ mod tests {
         let (_, index) = world.entities().get(1).unwrap().clone().unwrap();
         assert_eq!(index, 0);
 
-        assert_eq!(world.get_component::<A>(Entity(1)).unwrap().0, 42);
-        assert!(!world.get_component::<B>(Entity(1)).unwrap().0);
-        assert_eq!(world.get_component::<C>(Entity(1)).unwrap().0, Some("a"));
+        assert_eq!(world.component::<A>(Entity(1)).unwrap().0, 42);
+        assert!(!world.component::<B>(Entity(1)).unwrap().0);
+        assert_eq!(world.component::<C>(Entity(1)).unwrap().0, Some("a"));
 
         // repeat in different order
-        assert_eq!(world.get_component::<C>(Entity(1)).unwrap().0, Some("a"));
-        assert!(!world.get_component::<B>(Entity(1)).unwrap().0,);
-        assert_eq!(world.get_component::<A>(Entity(1)).unwrap().0, 42);
+        assert_eq!(world.component::<C>(Entity(1)).unwrap().0, Some("a"));
+        assert!(!world.component::<B>(Entity(1)).unwrap().0,);
+        assert_eq!(world.component::<A>(Entity(1)).unwrap().0, 42);
 
-        world.get_component_mut::<A>(Entity(1)).unwrap().0 = 123u32;
-        world.get_component_mut::<B>(Entity(1)).unwrap().0 = true;
+        world.component_mut::<A>(Entity(1)).unwrap().0 = 123u32;
+        world.component_mut::<B>(Entity(1)).unwrap().0 = true;
 
-        assert_eq!(world.get_component::<A>(Entity(1)).unwrap().0, 123u32);
-        assert!(world.get_component::<B>(Entity(1)).unwrap().0);
+        assert_eq!(world.component::<A>(Entity(1)).unwrap().0, 123u32);
+        assert!(world.component::<B>(Entity(1)).unwrap().0);
     }
 
     #[test]
@@ -51,8 +51,8 @@ mod tests {
         let world = World::new();
 
         let e = world.spawn(&[&A(42u32)]);
-        assert!(world.get_component::<B>(e).is_none());
-        assert!(world.get_component_mut::<B>(e).is_none());
+        assert!(world.component::<B>(e).is_none());
+        assert!(world.component_mut::<B>(e).is_none());
     }
 
     #[test]
@@ -215,11 +215,11 @@ mod tests {
 
         world.add_resource(R1(111));
         world.add_resource(R2(0));
-        assert_eq!(world.get_resource::<R1>().unwrap().0, 111);
-        assert_eq!(world.get_resource::<R2>().unwrap().0, 0);
+        assert_eq!(world.resource::<R1>().unwrap().0, 111);
+        assert_eq!(world.resource::<R2>().unwrap().0, 0);
 
-        world.get_resource_mut::<R1>().unwrap().0 = 222;
-        assert_eq!(world.get_resource::<R1>().unwrap().0, 222);
+        world.resource_mut::<R1>().unwrap().0 = 222;
+        assert_eq!(world.resource::<R1>().unwrap().0, 222);
 
         world.spawn(&[&A(1)]);
 

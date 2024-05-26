@@ -132,7 +132,7 @@ impl<'a, T: Resource + 'static> QueryParam<'a, T, Res<'a, T>> for Res<'_, T> {
 
     #[inline(always)]
     fn access(world: &'a World, _: Option<&'a ComponentList>, _: usize) -> Res<'a, T> {
-        match world.get_resource::<T>() {
+        match world.resource::<T>() {
             Some(r) => Res(r),
             None => panic!("Resource does not exist"),
         }
@@ -166,7 +166,7 @@ impl<'a, T: Resource + 'static> QueryParam<'a, T, ResMut<'a, T>> for ResMut<'_, 
 
     #[inline(always)]
     fn access(world: &'a World, _: Option<&'a ComponentList>, _: usize) -> ResMut<'a, T> {
-        match world.get_resource_mut::<T>() {
+        match world.resource_mut::<T>() {
             Some(r) => ResMut(r),
             None => panic!("Resource does not exist"),
         }
@@ -523,7 +523,7 @@ impl World {
         }
     }
 
-    pub fn get_component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
+    pub fn component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
         unsafe {
             if let Some(Some((archetype, index))) = self.entities().get(*entity) {
                 self.stores().get(archetype).unwrap().try_read::<T>(*index)
@@ -533,7 +533,7 @@ impl World {
         }
     }
 
-    pub fn get_component_mut<T: Component + 'static>(&self, entity: Entity) -> Option<&mut T> {
+    pub fn component_mut<T: Component + 'static>(&self, entity: Entity) -> Option<&mut T> {
         unsafe {
             if let Some(Some((archetype, index))) = self.entities().get(*entity) {
                 self.stores_mut()
@@ -551,13 +551,13 @@ impl World {
             .insert(TypeId::of::<T>(), Box::new(resource));
     }
 
-    pub fn get_resource<T: Resource + 'static>(&self) -> Option<&T> {
+    pub fn resource<T: Resource + 'static>(&self) -> Option<&T> {
         self.resources()
             .get(&TypeId::of::<T>())
             .map(|r| r.as_any().downcast_ref().unwrap())
     }
 
-    pub fn get_resource_mut<T: Resource + 'static>(&self) -> Option<&mut T> {
+    pub fn resource_mut<T: Resource + 'static>(&self) -> Option<&mut T> {
         self.resources_mut()
             .get_mut(&TypeId::of::<T>())
             .map(|r| r.as_mut_any().downcast_mut().unwrap())
