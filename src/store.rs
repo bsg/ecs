@@ -163,6 +163,10 @@ impl Store {
     pub unsafe fn get_component_list<T: Component + 'static>(&self) -> Option<&ComponentList> {
         self.data.get(&T::info_static().id())
     }
+
+    pub fn has_component<T: Component + 'static>(&self, entity_index: usize) -> bool {
+        self.data.contains_key(&T::info_static().id())
+    }
 }
 
 #[cfg(test)]

@@ -1,3 +1,5 @@
+// TODO some of these unwraps could be unchecked i.e. store lookups for entities confirmed live
+
 extern crate codegen;
 pub use codegen::Component;
 pub use codegen::Resource;
@@ -520,6 +522,14 @@ impl World {
 
                 self.free_entities_mut().insert(entity);
             }
+        }
+    }
+
+    pub fn has_component<T: Component + 'static>(&self, entity: Entity) -> bool {
+        if let Some(Some((archetype, index))) = self.entities().get(*entity) {
+            self.stores().get(archetype).unwrap().has_component::<T>(*index)
+        } else {
+            false
         }
     }
 

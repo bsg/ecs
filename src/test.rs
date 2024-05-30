@@ -14,6 +14,9 @@ mod tests {
     #[derive(Component)]
     struct C<'a>(Option<&'a str>);
 
+    #[derive(Component)]
+    struct Z {}
+
     #[derive(Resource)]
     struct R1(u32);
 
@@ -44,6 +47,9 @@ mod tests {
 
         assert_eq!(world.component::<A>(Entity(1)).unwrap().0, 123u32);
         assert!(world.component::<B>(Entity(1)).unwrap().0);
+
+        assert!(world.has_component::<A>(Entity(1)));
+        assert!(!world.has_component::<Z>(Entity(1)));
     }
 
     #[test]
