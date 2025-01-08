@@ -8,7 +8,7 @@ use crate::component::{Component, ComponentId, ComponentInfo};
 
 pub(crate) struct ComponentList {
     data: *mut u8,
-    item_size: usize,
+    stride: usize,
     cap: usize,
 }
 
@@ -16,7 +16,7 @@ impl ComponentList {
     pub fn new(item_size: usize) -> Self {
         ComponentList {
             data: null_mut(),
-            item_size,
+            stride: item_size,
             cap: 0,
         }
     }
@@ -27,11 +27,11 @@ impl ComponentList {
         if idx >= self.cap {
             let new_cap = if idx == 0 { INITIAL_CAP } else { idx * 2 };
             if self.data.is_null() {
-                let layout = std::alloc::Layout::array::<u8>(self.item_size * new_cap).unwrap();
+                let layout = std::alloc::Layout::array::<u8>(self.stride * new_cap).unwrap();
                 self.data = std::alloc::alloc(layout);
             } else {
-                let layout = std::alloc::Layout::array::<u8>(self.item_size * self.cap).unwrap();
-                self.data = std::alloc::realloc(self.data, layout, self.item_size * new_cap);
+                let layout = std::alloc::Layout::array::<u8>(self.stride * self.cap).unwrap();
+                self.data = std::alloc::realloc(self.data, layout, self.stride * new_cap);
             }
             if self.data.is_null() {
                 todo!()
@@ -42,26 +42,26 @@ impl ComponentList {
 
     #[inline(always)]
     pub unsafe fn read<T: Component + 'static>(&self, idx: usize) -> &T {
-        &*self.data.add(self.item_size * idx).cast::<T>()
+        &*self.data.add(self.stride * idx).cast::<T>()
     }
 
     #[allow(clippy::mut_from_ref)]
     #[inline(always)]
     pub unsafe fn read_mut<T: Component + 'static>(&self, idx: usize) -> &mut T {
-        &mut *self.data.add(self.item_size * idx).cast::<T>()
+        &mut *self.data.add(self.stride * idx).cast::<T>()
     }
 
     #[inline(always)]
     pub unsafe fn write<T: Component + 'static>(&mut self, idx: usize, val: T) {
         self.grow(idx);
-        self.data.add(self.item_size * idx).cast::<T>().write(val);
+        self.data.add(self.stride * idx).cast::<T>().write(val);
     }
 
     #[inline(always)]
     pub unsafe fn write_any(&mut self, idx: usize, val: &dyn Component) {
         self.grow(idx);
         self.data
-            .add(self.item_size * idx)
+            .add(self.stride * idx)
             .copy_from_nonoverlapping(mem::transmute_copy(&val), val.info().size());
     }
 }

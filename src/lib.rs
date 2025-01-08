@@ -28,12 +28,12 @@ pub trait Resource {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Entity(usize);
+pub struct Entity(u32);
 
 impl Deref for Entity {
-    type Target = usize;
+    type Target = u32;
 
-    fn deref(&self) -> &usize {
+    fn deref(&self) -> &u32 {
         &self.0
     }
 }
@@ -226,11 +226,11 @@ pub trait System<'a, Params> {
 }
 
 macro_rules! impl_system {
-    ($(($param:ident, $type:ident, $list:ident)),+) => {
-        impl<'a, $($param,)+ $($type,)+ F> System<'a, ($($param,)+ $($type,)+)> for F
+    ($(($param:ident, $t:ident, $list:ident)),+) => {
+        impl<'a, $($param,)+ $($t,)+ F> System<'a, ($($param,)+ $($t,)+)> for F
         where
-            $($type: Component + 'static,)+
-            $($param: QueryParam<'a, $type, $param>,)+
+            $($t: Component + 'static,)+
+            $($param: QueryParam<'a, $t, $param>,)+
             F: FnMut($($param,)+),
         {
             fn run(&mut self, world: &'a World) {
@@ -240,7 +240,7 @@ macro_rules! impl_system {
                             let mut item_idx = 0;
                             let len = store.len();
                             let entities = store.get_component_list::<Entity>().unwrap();
-                            $(let $list = store.get_component_list::<$type>();)+
+                            $(let $list = store.get_component_list::<$t>();)+
                             while item_idx < len {
                                 if entities.read::<Entity>(item_idx).0 != 0 {
                                     self(
@@ -477,7 +477,7 @@ impl World {
     pub fn spawn(&self, bundle: &[&(dyn Component + Send)]) -> Entity {
         let entity = match self.free_entities_mut().pop_first() {
             Some(e) => e,
-            None => Entity(self.entities().len()),
+            None => Entity(self.entities().len() as u32),
         };
 
         let mut archetype = Archetype::new();
@@ -498,7 +498,7 @@ impl World {
         for item in bundle {
             unsafe { store.write_any(item.info(), index, *item) };
         }
-        match self.entities_mut().get_mut(*entity) {
+        match self.entities_mut().get_mut(*entity as usize) {
             Some(p) => *p = Some((archetype, index)),
             None => self.entities_mut().push(Some((archetype, index))),
         }
@@ -512,13 +512,13 @@ impl World {
                 return;
             }
 
-            if let Some(Some((archetype, index))) = self.entities().get(*entity) {
+            if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
                 let store = self.stores_mut().get_mut(archetype).unwrap();
 
                 *store.read_mut::<Entity>(*index) = Entity(0);
                 store.free_index(*index);
 
-                *self.entities_mut().get_mut(*entity).unwrap() = None;
+                *self.entities_mut().get_mut(*entity as usize).unwrap() = None;
 
                 self.free_entities_mut().insert(entity);
             }
@@ -526,8 +526,11 @@ impl World {
     }
 
     pub fn has_component<T: Component + 'static>(&self, entity: Entity) -> bool {
-        if let Some(Some((archetype, index))) = self.entities().get(*entity) {
-            self.stores().get(archetype).unwrap().has_component::<T>(*index)
+        if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
+            self.stores()
+                .get(archetype)
+                .unwrap()
+                .has_component::<T>(*index)
         } else {
             false
         }
@@ -535,7 +538,7 @@ impl World {
 
     pub fn component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
         unsafe {
-            if let Some(Some((archetype, index))) = self.entities().get(*entity) {
+            if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
                 self.stores().get(archetype).unwrap().try_read::<T>(*index)
             } else {
                 None
@@ -545,7 +548,7 @@ impl World {
 
     pub fn component_mut<T: Component + 'static>(&self, entity: Entity) -> Option<&mut T> {
         unsafe {
-            if let Some(Some((archetype, index))) = self.entities().get(*entity) {
+            if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
                 self.stores_mut()
                     .get_mut(archetype)
                     .unwrap()
