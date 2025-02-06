@@ -271,15 +271,28 @@ mod tests {
         let e1 = world.spawn(&[&A(1)]);
         let e2 = world.spawn(&[&A(2)]);
         let e3 = world.spawn(&[&A(3)]);
+        let e4 = world.spawn(&[&A(4), &C(Some("bar"))]);
 
-        let ent = *e2;
+        world.add_component(e2, C(Some("foo"))).unwrap();
         world.add_component(e2, C(Some("foo")));
         assert!(world.has_component::<A>(e2));
         assert!(world.has_component::<C>(e2));
         assert_eq!(world.component::<A>(e2).unwrap().0, 2);
+        assert!(world.has_component::<Entity>(e1));
+        assert!(world.has_component::<Entity>(e2));
+        assert!(world.has_component::<Entity>(e3));
+        assert!(world.has_component::<A>(e1));
+        assert!(world.has_component::<A>(e2));
 
+        world.remove_component::<A>(e2).unwrap();
         world.remove_component::<A>(e2);
         assert!(!world.has_component::<A>(e2));
         assert!(world.has_component::<C>(e2));
+        assert!(world.has_component::<Entity>(e2));
+        assert!(world.has_component::<Entity>(e4));
+        assert!(world.has_component::<A>(e4));
+        assert!(world.has_component::<C>(e4));
+
+        world.remove_component::<C>(e2).unwrap();
     }
 }

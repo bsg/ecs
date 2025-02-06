@@ -31,7 +31,7 @@ impl Archetype {
             todo!()
         }
 
-        self.bitfield ^= 1 << id;
+        self.bitfield &= !(1 << id);
     }
 
     #[inline(always)]
