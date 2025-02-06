@@ -26,7 +26,10 @@ pub struct ComponentInfo {
 
 impl ComponentInfo {
     pub fn new(id: ComponentId, size: usize) -> Self {
-        ComponentInfo { id, size: u32::try_from(size).expect("Component size too large") }
+        ComponentInfo {
+            id,
+            size: u32::try_from(size).expect("Component size too large"),
+        }
     }
 
     pub fn id(&self) -> ComponentId {

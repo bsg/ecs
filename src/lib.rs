@@ -526,11 +526,9 @@ impl World {
     }
 
     pub fn has_component<T: Component + 'static>(&self, entity: Entity) -> bool {
-        if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
-            self.stores()
-                .get(archetype)
-                .unwrap()
-                .has_component::<T>(*index)
+        // XXX why not just bittest the archetype?
+        if let Some(Some((archetype, _))) = self.entities().get(*entity as usize) {
+            self.stores().get(archetype).unwrap().has_component::<T>()
         } else {
             false
         }
@@ -556,6 +554,102 @@ impl World {
             } else {
                 None
             }
+        }
+    }
+
+    pub fn add_component<T: Component + 'static>(&self, entity: Entity, component: T) {
+        if let Some(Some((archetype, index))) = self.entities_mut().get_mut(*entity as usize) {
+            let store = self.stores_mut().get_mut(&archetype).unwrap();
+
+            let mut new_archetype = *archetype;
+            new_archetype.set(component.info());
+
+            if !self.stores().contains_key(&new_archetype) {
+                self.stores_mut()
+                    .insert(new_archetype.clone(), Store::new());
+            }
+            let new_store = self.stores_mut().get_mut(&new_archetype).unwrap();
+            let new_index = new_store.reserve_index();
+
+            for id in 0..128 {
+                if archetype.contains_id(id) {
+                    // XXX move this logic into ComponentList
+                    unsafe {
+                        new_store.add_component_list_by_id(
+                            ComponentId(id as u32),
+                            store
+                                .get_component_list_by_id(ComponentId(id as u32))
+                                .unwrap()
+                                .get_component_size(),
+                        );
+                        ComponentList::copy_item_from_list(
+                            store
+                                .get_component_list_by_id_mut(ComponentId(id as u32))
+                                .unwrap(),
+                            new_store
+                                .get_component_list_by_id_mut(ComponentId(id as u32))
+                                .unwrap(),
+                            *index,
+                            new_index,
+                        );
+
+                        *store.read_mut::<Entity>(*index) = Entity(0);
+                        store.free_index(*index);
+                    }
+                }
+            }
+
+            unsafe { new_store.write(new_index, component) };
+
+            *self.entities_mut().get_mut(*entity as usize).unwrap() =
+                Some((new_archetype, new_index));
+        }
+    }
+
+    pub fn remove_component<T: Component + 'static>(&self, entity: Entity) {
+        if let Some(Some((archetype, index))) = self.entities_mut().get_mut(*entity as usize) {
+            let store = self.stores_mut().get_mut(&archetype).unwrap();
+
+            let mut new_archetype = *archetype;
+            new_archetype.unset(T::info_static());
+
+            if !self.stores().contains_key(&new_archetype) {
+                self.stores_mut()
+                    .insert(new_archetype.clone(), Store::new());
+            }
+            let new_store = self.stores_mut().get_mut(&new_archetype).unwrap();
+            let new_index = new_store.reserve_index();
+
+            for id in 0..128 {
+                if new_archetype.contains_id(id) {
+                    // XXX move this logic into ComponentList
+                    unsafe {
+                        new_store.add_component_list_by_id(
+                            ComponentId(id as u32),
+                            store
+                                .get_component_list_by_id(ComponentId(id as u32))
+                                .unwrap()
+                                .get_component_size(),
+                        );
+                        ComponentList::copy_item_from_list(
+                            store
+                                .get_component_list_by_id_mut(ComponentId(id as u32))
+                                .unwrap(),
+                            new_store
+                                .get_component_list_by_id_mut(ComponentId(id as u32))
+                                .unwrap(),
+                            *index,
+                            new_index,
+                        );
+
+                        *store.read_mut::<Entity>(*index) = Entity(0);
+                        store.free_index(*index);
+                    }
+                }
+            }
+
+            *self.entities_mut().get_mut(*entity as usize).unwrap() =
+                Some((new_archetype, new_index));
         }
     }
 

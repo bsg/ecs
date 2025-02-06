@@ -1,3 +1,4 @@
+use core::panic;
 use std::{
     collections::{BTreeSet, HashMap},
     mem,
@@ -63,6 +64,29 @@ impl ComponentList {
         self.data
             .add(self.stride * idx)
             .copy_from_nonoverlapping(mem::transmute_copy(&val), val.info().size());
+    }
+
+    #[inline(always)]
+    pub unsafe fn copy_item_from_list(
+        src: &ComponentList,
+        dst: &mut ComponentList,
+        src_idx: usize,
+        dst_idx: usize,
+    ) {
+        if src.stride != dst.stride {
+            panic!()
+        }
+
+        dst.grow(dst_idx);
+        let ptr_src = src.data.add(src.stride * src_idx);
+        let ptr_dst = dst.data.add(dst.stride * dst_idx);
+
+        ptr_dst.copy_from_nonoverlapping(ptr_src, dst.stride);
+    }
+
+    #[inline(always)]
+    pub unsafe fn get_component_size(&self) -> usize {
+        self.stride
     }
 }
 
@@ -160,11 +184,26 @@ impl Store {
             .write_any(entity_index, val);
     }
 
-    pub unsafe fn get_component_list<T: Component + 'static>(&self) -> Option<&ComponentList> {
-        self.data.get(&T::info_static().id())
+    pub unsafe fn add_component_list_by_id(&mut self, id: ComponentId, size: usize) {
+        self.data.insert(id, ComponentList::new(size));
     }
 
-    pub fn has_component<T: Component + 'static>(&self, entity_index: usize) -> bool {
+    pub unsafe fn get_component_list_by_id(&self, id: ComponentId) -> Option<&ComponentList> {
+        self.data.get(&id)
+    }
+
+    pub unsafe fn get_component_list<T: Component + 'static>(&self) -> Option<&ComponentList> {
+        self.get_component_list_by_id(T::info_static().id())
+    }
+
+    pub unsafe fn get_component_list_by_id_mut(
+        &mut self,
+        id: ComponentId,
+    ) -> Option<&mut ComponentList> {
+        self.data.get_mut(&id)
+    }
+
+    pub fn has_component<T: Component + 'static>(&self) -> bool {
         self.data.contains_key(&T::info_static().id())
     }
 }

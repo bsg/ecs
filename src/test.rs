@@ -263,4 +263,23 @@ mod tests {
         });
         assert_eq!(sum, 4);
     }
+
+    #[test]
+    fn add_remove_component() {
+        let world = World::new();
+
+        let e1 = world.spawn(&[&A(1)]);
+        let e2 = world.spawn(&[&A(2)]);
+        let e3 = world.spawn(&[&A(3)]);
+
+        let ent = *e2;
+        world.add_component(e2, C(Some("foo")));
+        assert!(world.has_component::<A>(e2));
+        assert!(world.has_component::<C>(e2));
+        assert_eq!(world.component::<A>(e2).unwrap().0, 2);
+
+        world.remove_component::<A>(e2);
+        assert!(!world.has_component::<A>(e2));
+        assert!(world.has_component::<C>(e2));
+    }
 }
