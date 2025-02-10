@@ -16,6 +16,7 @@ use store::{ComponentList, Store};
 use core::panic;
 use std::hash::DefaultHasher;
 use std::hash::Hash;
+use std::mem::MaybeUninit;
 use std::{
     any::{Any, TypeId},
     cell::UnsafeCell,
@@ -54,19 +55,19 @@ impl Component for Entity {
     }
 }
 
-trait QueryParam<'a, T, A> {
+trait QueryParam<'a, T, A, C: Ctx> {
     fn info() -> ComponentInfo;
-    fn access(world: &'a World, list: Option<&'a ComponentList>, index: usize) -> A;
+    fn access(world: &'a World<C>, list: Option<&'a ComponentList>, index: usize) -> A;
     fn match_archetype(archetype: &Archetype) -> bool;
 }
 
-impl<'a, T: Component + 'static> QueryParam<'a, T, &'a T> for &'a T {
+impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a T, C> for &'a T {
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
     #[inline(always)]
-    fn access(_: &World, store: Option<&'a ComponentList>, index: usize) -> &'a T {
+    fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> &'a T {
         unsafe { store.unwrap_unchecked().read::<T>(index) }
     }
 
@@ -75,13 +76,13 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, &'a T> for &'a T {
     }
 }
 
-impl<'a, T: Component + 'static> QueryParam<'a, T, &'a mut T> for &'a mut T {
+impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a mut T, C> for &'a mut T {
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
     #[inline(always)]
-    fn access(_: &World, store: Option<&'a ComponentList>, index: usize) -> &'a mut T {
+    fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> &'a mut T {
         unsafe { store.unwrap_unchecked().read_mut::<T>(index) }
     }
 
@@ -90,13 +91,13 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, &'a mut T> for &'a mut T {
     }
 }
 
-impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a T>> for Option<&'a T> {
+impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a T>, C> for Option<&'a T> {
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
     #[inline(always)]
-    fn access(_: &World, store: Option<&'a ComponentList>, index: usize) -> Option<&'a T> {
+    fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> Option<&'a T> {
         unsafe { store.map(|list| list.read::<T>(index)) }
     }
 
@@ -105,13 +106,15 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a T>> for Option<&'a
     }
 }
 
-impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a mut T>> for Option<&'a mut T> {
+impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a mut T>, C>
+    for Option<&'a mut T>
+{
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
     #[inline(always)]
-    fn access(_: &World, store: Option<&'a ComponentList>, index: usize) -> Option<&'a mut T> {
+    fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> Option<&'a mut T> {
         unsafe { store.map(|list| list.read_mut::<T>(index)) }
     }
 
@@ -130,13 +133,13 @@ impl<'a, T: Resource + 'static> Deref for Res<'a, T> {
     }
 }
 
-impl<'a, T: Resource + 'static> QueryParam<'a, T, Res<'a, T>> for Res<'_, T> {
+impl<'a, T: Resource + 'static, C: Ctx> QueryParam<'a, T, Res<'a, T>, C> for Res<'_, T> {
     fn info() -> ComponentInfo {
         ComponentInfo::new(ComponentId(0), 0) // ignored
     }
 
     #[inline(always)]
-    fn access(world: &'a World, _: Option<&'a ComponentList>, _: usize) -> Res<'a, T> {
+    fn access(world: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> Res<'a, T> {
         match world.resource::<T>() {
             Some(r) => Res(r),
             None => panic!("Resource does not exist"),
@@ -164,13 +167,13 @@ impl<'a, T: Resource + 'static> DerefMut for ResMut<'a, T> {
     }
 }
 
-impl<'a, T: Resource + 'static> QueryParam<'a, T, ResMut<'a, T>> for ResMut<'_, T> {
+impl<'a, T: Resource + 'static, C: Ctx> QueryParam<'a, T, ResMut<'a, T>, C> for ResMut<'_, T> {
     fn info() -> ComponentInfo {
         ComponentInfo::new(ComponentId(0), 0) // ignored
     }
 
     #[inline(always)]
-    fn access(world: &'a World, _: Option<&'a ComponentList>, _: usize) -> ResMut<'a, T> {
+    fn access(world: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> ResMut<'a, T> {
         match world.resource_mut::<T>() {
             Some(r) => ResMut(r),
             None => panic!("Resource does not exist"),
@@ -186,13 +189,13 @@ pub struct With<T: Component> {
     marker: PhantomData<T>,
 }
 
-impl<'a, T: Component + 'static> QueryParam<'a, T, With<T>> for With<T> {
+impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, With<T>, C> for With<T> {
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
     #[inline(always)]
-    fn access(_: &'a World, _: Option<&'a ComponentList>, _: usize) -> With<T> {
+    fn access(_: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> With<T> {
         With {
             marker: PhantomData,
         }
@@ -207,13 +210,13 @@ pub struct Without<T: Component> {
     marker: PhantomData<T>,
 }
 
-impl<'a, T: Component + 'static> QueryParam<'a, T, Without<T>> for Without<T> {
+impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Without<T>, C> for Without<T> {
     fn info() -> ComponentInfo {
         T::info_static()
     }
 
     #[inline(always)]
-    fn access(_: &'a World, _: Option<&'a ComponentList>, _: usize) -> Without<T> {
+    fn access(_: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> Without<T> {
         Without {
             marker: PhantomData,
         }
@@ -224,19 +227,19 @@ impl<'a, T: Component + 'static> QueryParam<'a, T, Without<T>> for Without<T> {
     }
 }
 
-pub trait System<'a, Params> {
-    fn run(&mut self, world: &'a World);
+pub trait System<'a, Params, C: Ctx> {
+    fn run(&mut self, world: &'a World<C>);
 }
 
 macro_rules! impl_system {
     ($(($param:ident, $t:ident, $list:ident)),+) => {
-        impl<'a, $($param,)+ $($t,)+ F> System<'a, ($($param,)+ $($t,)+)> for F
+        impl<'a, $($param,)+ $($t,)+ F, C: Ctx> System<'a, ($($param,)+ $($t,)+), C> for F
         where
             $($t: Component + 'static,)+
-            $($param: QueryParam<'a, $t, $param>,)+
+            $($param: QueryParam<'a, $t, $param, C>,)+
             F: FnMut($($param,)+),
         {
-            fn run(&mut self, world: &'a World) {
+            fn run(&mut self, world: &'a World<C>) {
                 unsafe {
                     for (archetype, store) in world.stores_mut().iter_mut() {
                         if $($param::match_archetype(archetype)) &&+ && true {
@@ -416,19 +419,22 @@ impl_system!(
     (A16, T16, r16)
 );
 
-struct WorldInner {
+pub trait Ctx {}
+
+struct WorldInner<C: Ctx> {
     entities: Vec<Option<(Archetype, usize)>>,
     stores: HashMap<Archetype, Store>,
     free_entities: BTreeSet<Entity>,
     resources: HashMap<TypeId, Box<dyn Resource>>,
+    ctx: MaybeUninit<C>, // TODO  drop
 }
 
-pub struct World {
-    inner: UnsafeCell<WorldInner>,
+pub struct World<C: Ctx> {
+    inner: UnsafeCell<WorldInner<C>>,
 }
 
 #[allow(dead_code)]
-impl World {
+impl<C: Ctx> World<C> {
     pub fn new() -> Self {
         World {
             inner: UnsafeCell::new(WorldInner {
@@ -437,8 +443,13 @@ impl World {
                 stores: HashMap::new(),
                 free_entities: BTreeSet::new(),
                 resources: HashMap::new(),
+                ctx: MaybeUninit::<C>::uninit(),
             }),
         }
+    }
+
+    pub fn init_ctx(&mut self, ctx: C) {
+        unsafe { self.inner.get().as_mut().unwrap().ctx = MaybeUninit::new(ctx) }
     }
 
     fn entities(&self) -> &Vec<Option<(Archetype, usize)>> {
@@ -710,12 +721,20 @@ impl World {
             .map(|r| r.as_mut_any().downcast_mut().unwrap())
     }
 
-    pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params>) {
+    pub fn ctx(&self) -> &C {
+        unsafe { &self.inner.get().as_ref().unwrap().ctx.assume_init_ref() }
+    }
+
+    pub fn ctx_mut(&self) -> &mut C {
+        unsafe { self.inner.get().as_mut().unwrap().ctx.assume_init_mut() }
+    }
+
+    pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params, C>) {
         f.run(self)
     }
 }
 
-impl Default for World {
+impl<C: Ctx> Default for World<C> {
     fn default() -> Self {
         Self::new()
     }
