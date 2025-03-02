@@ -11,11 +11,11 @@ mod test;
 
 use archetype::Archetype;
 use component::{Component, ComponentId, ComponentInfo};
+use serde::Deserialize;
+use serde::Serialize;
 use store::{ComponentList, Store};
 
 use core::panic;
-use std::hash::DefaultHasher;
-use std::hash::Hash;
 use std::mem::MaybeUninit;
 use std::{
     any::{Any, TypeId},
@@ -31,7 +31,7 @@ pub trait Resource {
     fn as_mut_any(&mut self) -> &mut dyn Any;
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct Entity(u32);
 
 impl Deref for Entity {
@@ -731,6 +731,11 @@ impl<C: Ctx> World<C> {
 
     pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params, C>) {
         f.run(self)
+    }
+
+    // TODO rename
+    pub fn num_entities_upper_bound(&self) -> u32 {
+        self.entities().len() as u32
     }
 }
 

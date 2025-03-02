@@ -23,9 +23,12 @@ mod tests {
     #[derive(Resource)]
     struct R2(u32);
 
+    struct Ctx;
+    impl ecs::Ctx for Ctx {}
+
     #[test]
     fn get_component() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         let entity_ref = world.spawn(&[&A(42u32), &B(false), &C(Some("a"))]);
         assert_eq!(entity_ref.0, 1);
@@ -54,7 +57,7 @@ mod tests {
 
     #[test]
     fn get_nonexisting_component() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         let e = world.spawn(&[&A(42u32)]);
         assert!(world.component::<B>(e).is_none());
@@ -63,7 +66,7 @@ mod tests {
 
     #[test]
     fn query() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.spawn(&[&A(1u32), &C(Some("1"))]);
         world.spawn(&[&A(2u32), &C(Some("2")), &B(true)]);
@@ -84,7 +87,7 @@ mod tests {
 
     #[test]
     fn query_with_optional() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.spawn(&[&B(true), &A(1)]);
         world.spawn(&[&B(true)]);
@@ -108,7 +111,7 @@ mod tests {
 
     #[test]
     fn query_with_entity() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.spawn(&[&B(true), &A(1)]);
         world.spawn(&[&B(true)]);
@@ -125,7 +128,7 @@ mod tests {
 
     #[test]
     fn spawn_inside_system() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.spawn(&[&C("1".into())]);
         world.spawn(&[&C("2".into())]);
@@ -145,7 +148,7 @@ mod tests {
 
     #[test]
     fn spawn_inside_system_subset() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.spawn(&[&A(1), &C("1".into())]);
         world.spawn(&[&A(2), &C("2".into())]);
@@ -165,7 +168,7 @@ mod tests {
 
     #[test]
     fn spawn_inside_system_same_archetype() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.spawn(&[&A(1)]);
 
@@ -183,7 +186,7 @@ mod tests {
 
     #[test]
     fn despawn() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.spawn(&[&A(1)]);
         world.spawn(&[&A(2)]);
@@ -202,7 +205,7 @@ mod tests {
 
     #[test]
     fn reuse_entity() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.spawn(&[&A(1)]);
         world.spawn(&[&A(2)]);
@@ -217,7 +220,7 @@ mod tests {
 
     #[test]
     fn resources() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.add_resource(R1(111));
         world.add_resource(R2(0));
@@ -244,7 +247,7 @@ mod tests {
 
     #[test]
     fn with_without() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         world.spawn(&[&A(1), &B(false)]);
         world.spawn(&[&A(2)]);
@@ -266,7 +269,7 @@ mod tests {
 
     #[test]
     fn add_remove_component() {
-        let world = World::new();
+        let world: World<Ctx> = World::new();
 
         let e1 = world.spawn(&[&A(1)]);
         let e2 = world.spawn(&[&A(2)]);
@@ -274,7 +277,7 @@ mod tests {
         let e4 = world.spawn(&[&A(4), &C(Some("bar"))]);
 
         world.add_component(e2, C(Some("foo"))).unwrap();
-        world.add_component(e2, C(Some("foo")));
+        world.add_component(e2, C(Some("foo"))).expect_err("");
         assert!(world.has_component::<A>(e2));
         assert!(world.has_component::<C>(e2));
         assert_eq!(world.component::<A>(e2).unwrap().0, 2);
@@ -285,7 +288,7 @@ mod tests {
         assert!(world.has_component::<A>(e2));
 
         world.remove_component::<A>(e2).unwrap();
-        world.remove_component::<A>(e2);
+        world.remove_component::<A>(e2).expect_err("");
         assert!(!world.has_component::<A>(e2));
         assert!(world.has_component::<C>(e2));
         assert!(world.has_component::<Entity>(e2));
