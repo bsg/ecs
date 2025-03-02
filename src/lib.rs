@@ -32,7 +32,7 @@ pub trait Resource {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-pub struct Entity(u32);
+pub struct Entity(pub u32);
 
 impl Deref for Entity {
     type Target = u32;
@@ -516,6 +516,36 @@ impl<C: Ctx> World<C> {
             Some(p) => *p = Some((archetype, index)),
             None => self.entities_mut().push(Some((archetype, index))),
         }
+
+        entity
+    }
+
+    // TODO tests
+    pub fn insert(&self, entity: Entity, bundle: &[&(dyn Component + Send)]) -> Entity {
+        let mut archetype = Archetype::new();
+
+        for item in bundle {
+            archetype.set(item.info());
+        }
+
+        archetype.set(Entity::info_static());
+
+        if !self.stores().contains_key(&archetype) {
+            self.stores_mut().insert(archetype.clone(), Store::new());
+        }
+
+        let store = self.stores_mut().get_mut(&archetype).unwrap();
+        let index = store.reserve_index();
+        unsafe { store.write::<Entity>(index, entity) };
+        for item in bundle {
+            unsafe { store.write_any(item.info(), index, *item) };
+        }
+
+        if *entity as usize >= self.entities().len() {
+            self.entities_mut().resize(*entity as usize + 1, None);
+        }
+        self.entities_mut().as_mut_slice()[*entity as usize] = Some((archetype, index));
+        self.free_entities_mut().remove(&entity);
 
         entity
     }
