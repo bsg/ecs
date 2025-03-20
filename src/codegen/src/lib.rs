@@ -27,14 +27,6 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
                 ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>())
             }
         }
-
-        impl #generics Clone for #ident #generics {
-            fn clone(&self) -> Self {
-                *self
-            }
-        }
-
-        impl #generics Copy for #ident #generics {}
     }
     .into()
 }
