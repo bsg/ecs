@@ -144,6 +144,7 @@ impl Store {
             .map(|list| list.read::<T>(entity_index))
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub unsafe fn try_read_mut<T: Component + 'static>(
         &self,
         entity_index: usize,
@@ -154,12 +155,9 @@ impl Store {
     }
 
     pub unsafe fn write<T: Component + 'static>(&mut self, entity_index: usize, val: T) {
-        if self.data.get(&T::info_static().id()).is_none() {
-            self.data.insert(
-                T::info_static().id(),
-                ComponentList::new(T::info_static().size()),
-            );
-        }
+        self.data
+            .entry(T::info_static().id())
+            .or_insert_with(|| ComponentList::new(T::info_static().size()));
         self.data
             .get_mut(&T::info_static().id())
             .unwrap()
@@ -172,12 +170,9 @@ impl Store {
         entity_index: usize,
         val: &dyn Component,
     ) {
-        if self.data.get(&component_info.id()).is_none() {
-            self.data.insert(
-                component_info.id(),
-                ComponentList::new(component_info.size()),
-            );
-        }
+        self.data
+            .entry(component_info.id())
+            .or_insert_with(|| ComponentList::new(component_info.size()));
         self.data
             .get_mut(&component_info.id())
             .unwrap()

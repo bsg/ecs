@@ -1,8 +1,5 @@
-// TODO some of these unwraps could be unchecked i.e. store lookups for entities confirmed live
-
 extern crate codegen;
 pub use codegen::Component;
-pub use codegen::Resource;
 
 mod archetype;
 pub mod component;
@@ -18,18 +15,12 @@ use store::{ComponentList, Store};
 use core::panic;
 use std::mem::MaybeUninit;
 use std::{
-    any::{Any, TypeId},
     cell::UnsafeCell,
     collections::{BTreeSet, HashMap},
     marker::PhantomData,
     mem,
-    ops::{Deref, DerefMut},
+    ops::Deref,
 };
-
-pub trait Resource {
-    fn as_any(&self) -> &dyn Any;
-    fn as_mut_any(&mut self) -> &mut dyn Any;
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct Entity(pub u32);
@@ -106,60 +97,6 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a mut T>, C>
     }
 }
 
-pub struct Res<'a, T: Resource + 'static>(&'a T);
-
-impl<'a, T: Resource + 'static> Deref for Res<'a, T> {
-    type Target = &'a T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'a, T: Resource + 'static, C: Ctx> QueryParam<'a, T, Res<'a, T>, C> for Res<'_, T> {
-    #[inline(always)]
-    fn access(world: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> Res<'a, T> {
-        match world.resource::<T>() {
-            Some(r) => Res(r),
-            None => panic!("Resource does not exist"),
-        }
-    }
-
-    fn match_archetype(_: &Archetype) -> bool {
-        true
-    }
-}
-
-pub struct ResMut<'a, T: Resource + 'static>(&'a mut T);
-
-impl<'a, T: Resource + 'static> Deref for ResMut<'a, T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        self.0
-    }
-}
-
-impl<'a, T: Resource + 'static> DerefMut for ResMut<'a, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        self.0
-    }
-}
-
-impl<'a, T: Resource + 'static, C: Ctx> QueryParam<'a, T, ResMut<'a, T>, C> for ResMut<'_, T> {
-    #[inline(always)]
-    fn access(world: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> ResMut<'a, T> {
-        match world.resource_mut::<T>() {
-            Some(r) => ResMut(r),
-            None => panic!("Resource does not exist"),
-        }
-    }
-
-    fn match_archetype(_: &Archetype) -> bool {
-        true
-    }
-}
-
 pub struct With<T: Component> {
     marker: PhantomData<T>,
 }
@@ -212,7 +149,7 @@ macro_rules! impl_system {
                         if $($param::match_archetype(archetype)) &&+ && true {
                             let mut item_idx = 0;
                             let len = store.len();
-                            let entities = store.get_component_list::<Entity>().unwrap();
+                            let entities = store.get_component_list::<Entity>().unwrap_unchecked();
                             $(let $list = store.get_component_list::<$t>();)+
                             while item_idx < len {
                                 if entities.read::<Entity>(item_idx).0 != 0 {
@@ -392,10 +329,10 @@ struct WorldInner<C: Ctx> {
     entities: Vec<Option<(Archetype, usize)>>,
     stores: HashMap<Archetype, Store>,
     free_entities: BTreeSet<Entity>,
-    resources: HashMap<TypeId, Box<dyn Resource>>,
     ctx: MaybeUninit<C>, // TODO  drop
 }
 
+// TODO need accessors for the inner containers because the code is littered with inner.get().as_mut().unwrap_unchecked()
 pub struct World<C: Ctx> {
     inner: UnsafeCell<WorldInner<C>>,
 }
@@ -409,57 +346,47 @@ impl<C: Ctx> World<C> {
                 entities: vec![None],
                 stores: HashMap::new(),
                 free_entities: BTreeSet::new(),
-                resources: HashMap::new(),
                 ctx: MaybeUninit::<C>::uninit(),
             }),
         }
     }
 
     pub fn init_ctx(&self, ctx: C) {
-        unsafe { self.inner.get().as_mut().unwrap().ctx = MaybeUninit::new(ctx) }
+        unsafe { self.inner.get().as_mut().unwrap_unchecked().ctx = MaybeUninit::new(ctx) }
     }
 
     fn entities(&self) -> &Vec<Option<(Archetype, usize)>> {
-        unsafe { &self.inner.get().as_ref().unwrap().entities }
+        unsafe { &self.inner.get().as_ref().unwrap_unchecked().entities }
     }
 
     #[allow(clippy::mut_from_ref)]
     fn entities_mut(&self) -> &mut Vec<Option<(Archetype, usize)>> {
-        unsafe { &mut self.inner.get().as_mut().unwrap().entities }
+        unsafe { &mut self.inner.get().as_mut().unwrap_unchecked().entities }
     }
 
     fn stores(&self) -> &HashMap<Archetype, Store> {
-        unsafe { &self.inner.get().as_ref().unwrap().stores }
+        unsafe { &self.inner.get().as_ref().unwrap_unchecked().stores }
     }
 
     #[allow(clippy::mut_from_ref)]
     fn stores_mut(&self) -> &mut HashMap<Archetype, Store> {
-        unsafe { &mut self.inner.get().as_mut().unwrap().stores }
+        unsafe { &mut self.inner.get().as_mut().unwrap_unchecked().stores }
     }
 
     fn free_entities(&self) -> &BTreeSet<Entity> {
-        unsafe { &self.inner.get().as_ref().unwrap().free_entities }
+        unsafe { &self.inner.get().as_ref().unwrap_unchecked().free_entities }
     }
 
     #[allow(clippy::mut_from_ref)]
     fn free_entities_mut(&self) -> &mut BTreeSet<Entity> {
-        unsafe { &mut self.inner.get().as_mut().unwrap().free_entities }
-    }
-
-    fn resources(&self) -> &HashMap<TypeId, Box<dyn Resource>> {
-        unsafe { &self.inner.get().as_ref().unwrap().resources }
-    }
-
-    #[allow(clippy::mut_from_ref)]
-    fn resources_mut(&self) -> &mut HashMap<TypeId, Box<dyn Resource>> {
-        unsafe { &mut self.inner.get().as_mut().unwrap().resources }
+        unsafe { &mut self.inner.get().as_mut().unwrap_unchecked().free_entities }
     }
 
     pub fn spawn(&self, bundle: &[&(dyn Component + Send)]) -> Entity {
-        let entity = match self.free_entities_mut().pop_first() {
-            Some(e) => e,
-            None => Entity(self.entities().len() as u32),
-        };
+        let entity = self
+            .free_entities_mut()
+            .pop_first()
+            .unwrap_or(Entity(self.entities().len() as u32));
 
         let mut archetype = Archetype::new();
 
@@ -470,10 +397,10 @@ impl<C: Ctx> World<C> {
         archetype.set(Entity::info_static());
 
         if !self.stores().contains_key(&archetype) {
-            self.stores_mut().insert(archetype.clone(), Store::new());
+            self.stores_mut().insert(archetype, Store::new());
         }
 
-        let store = self.stores_mut().get_mut(&archetype).unwrap();
+        let store = unsafe { self.stores_mut().get_mut(&archetype).unwrap_unchecked() };
         let index = store.reserve_index();
         unsafe { store.write::<Entity>(index, entity) };
         for item in bundle {
@@ -498,10 +425,10 @@ impl<C: Ctx> World<C> {
         archetype.set(Entity::info_static());
 
         if !self.stores().contains_key(&archetype) {
-            self.stores_mut().insert(archetype.clone(), Store::new());
+            self.stores_mut().insert(archetype, Store::new());
         }
 
-        let store = self.stores_mut().get_mut(&archetype).unwrap();
+        let store = unsafe { self.stores_mut().get_mut(&archetype).unwrap_unchecked() };
         let index = store.reserve_index();
         unsafe { store.write::<Entity>(index, entity) };
         for item in bundle {
@@ -517,6 +444,7 @@ impl<C: Ctx> World<C> {
         entity
     }
 
+    /// # Safety
     /// This is marked 'unsafe' because it's likely that component specific teardown
     /// will need to be implemented by the user
     pub unsafe fn despawn(&self, entity: Entity) {
@@ -525,12 +453,15 @@ impl<C: Ctx> World<C> {
         }
 
         if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
-            let store = self.stores_mut().get_mut(archetype).unwrap();
+            let store = self.stores_mut().get_mut(archetype).unwrap_unchecked();
 
             *store.read_mut::<Entity>(*index) = Entity(0);
             store.free_index(*index);
 
-            *self.entities_mut().get_mut(*entity as usize).unwrap() = None;
+            *self
+                .entities_mut()
+                .get_mut(*entity as usize)
+                .unwrap_unchecked() = None;
 
             self.free_entities_mut().insert(entity);
         }
@@ -538,7 +469,12 @@ impl<C: Ctx> World<C> {
 
     pub fn has_component<T: Component + 'static>(&self, entity: Entity) -> bool {
         if let Some(Some((archetype, _))) = self.entities().get(*entity as usize) {
-            self.stores().get(archetype).unwrap().has_component::<T>()
+            unsafe {
+                self.stores()
+                    .get(archetype)
+                    .unwrap_unchecked()
+                    .has_component::<T>()
+            }
         } else {
             false
         }
@@ -547,19 +483,23 @@ impl<C: Ctx> World<C> {
     pub fn component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
         unsafe {
             if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
-                self.stores().get(archetype).unwrap().try_read::<T>(*index)
+                self.stores()
+                    .get(archetype)
+                    .unwrap_unchecked()
+                    .try_read::<T>(*index)
             } else {
                 None
             }
         }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn component_mut<T: Component + 'static>(&self, entity: Entity) -> Option<&mut T> {
         unsafe {
             if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
                 self.stores_mut()
                     .get_mut(archetype)
-                    .unwrap()
+                    .unwrap_unchecked()
                     .try_read_mut::<T>(*index)
             } else {
                 None
@@ -583,8 +523,9 @@ impl<C: Ctx> World<C> {
             if !self.stores().contains_key(&new_archetype) {
                 self.stores_mut().insert(new_archetype, Store::new());
 
-                let store = self.stores_mut().get_mut(&archetype).unwrap();
-                let new_store = self.stores_mut().get_mut(&new_archetype).unwrap();
+                let store = unsafe { self.stores_mut().get_mut(archetype).unwrap_unchecked() };
+                let new_store =
+                    unsafe { self.stores_mut().get_mut(&new_archetype).unwrap_unchecked() };
                 for id in 0..128 {
                     unsafe {
                         if let Some(list) = store.get_component_list_by_id(ComponentId(id as u32)) {
@@ -599,8 +540,8 @@ impl<C: Ctx> World<C> {
                 }
             }
 
-            let store = self.stores_mut().get_mut(&archetype).unwrap();
-            let new_store = self.stores_mut().get_mut(&new_archetype).unwrap();
+            let store = unsafe { self.stores_mut().get_mut(archetype).unwrap_unchecked() };
+            let new_store = unsafe { self.stores_mut().get_mut(&new_archetype).unwrap_unchecked() };
             let new_index = new_store.reserve_index();
 
             for id in 0..128 {
@@ -609,10 +550,10 @@ impl<C: Ctx> World<C> {
                         ComponentList::copy_item_from_list(
                             store
                                 .get_component_list_by_id_mut(ComponentId(id as u32))
-                                .unwrap(),
+                                .unwrap_unchecked(),
                             new_store
                                 .get_component_list_by_id_mut(ComponentId(id as u32))
-                                .unwrap(),
+                                .unwrap_unchecked(),
                             *index,
                             new_index,
                         );
@@ -652,8 +593,9 @@ impl<C: Ctx> World<C> {
                     panic!("")
                 }
 
-                let store = self.stores_mut().get_mut(&archetype).unwrap();
-                let new_store = self.stores_mut().get_mut(&new_archetype).unwrap();
+                let store = unsafe { self.stores_mut().get_mut(archetype).unwrap_unchecked() };
+                let new_store =
+                    unsafe { self.stores_mut().get_mut(&new_archetype).unwrap_unchecked() };
                 for id in 0..128usize {
                     unsafe {
                         if let Some(list) = store.get_component_list_by_id(ComponentId(id as u32)) {
@@ -668,8 +610,8 @@ impl<C: Ctx> World<C> {
                 }
             }
 
-            let store = self.stores_mut().get_mut(&archetype).unwrap();
-            let new_store = self.stores_mut().get_mut(&new_archetype).unwrap();
+            let store = unsafe { self.stores_mut().get_mut(archetype).unwrap_unchecked() };
+            let new_store = unsafe { self.stores_mut().get_mut(&new_archetype).unwrap_unchecked() };
             let new_index = new_store.reserve_index();
 
             for id in 0..128usize {
@@ -678,10 +620,10 @@ impl<C: Ctx> World<C> {
                         ComponentList::copy_item_from_list(
                             store
                                 .get_component_list_by_id_mut(ComponentId(id as u32))
-                                .unwrap(),
+                                .unwrap_unchecked(),
                             new_store
                                 .get_component_list_by_id_mut(ComponentId(id as u32))
-                                .unwrap(),
+                                .unwrap_unchecked(),
                             *index,
                             new_index,
                         );
@@ -701,29 +643,27 @@ impl<C: Ctx> World<C> {
         Result::Err(())
     }
 
-    pub fn add_resource<T: Resource + 'static>(&self, resource: T) {
-        self.resources_mut()
-            .insert(TypeId::of::<T>(), Box::new(resource));
-    }
-
-    pub fn resource<T: Resource + 'static>(&self) -> Option<&T> {
-        self.resources()
-            .get(&TypeId::of::<T>())
-            .map(|r| r.as_any().downcast_ref().unwrap())
-    }
-
-    pub fn resource_mut<T: Resource + 'static>(&self) -> Option<&mut T> {
-        self.resources_mut()
-            .get_mut(&TypeId::of::<T>())
-            .map(|r| r.as_mut_any().downcast_mut().unwrap())
-    }
-
     pub fn ctx(&self) -> &C {
-        unsafe { &self.inner.get().as_ref().unwrap().ctx.assume_init_ref() }
+        unsafe {
+            self.inner
+                .get()
+                .as_ref()
+                .unwrap_unchecked()
+                .ctx
+                .assume_init_ref()
+        }
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn ctx_mut(&self) -> &mut C {
-        unsafe { self.inner.get().as_mut().unwrap().ctx.assume_init_mut() }
+        unsafe {
+            self.inner
+                .get()
+                .as_mut()
+                .unwrap_unchecked()
+                .ctx
+                .assume_init_mut()
+        }
     }
 
     pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params, C>) {

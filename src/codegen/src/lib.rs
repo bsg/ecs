@@ -30,34 +30,3 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
     }
     .into()
 }
-
-#[proc_macro_derive(Resource)]
-pub fn derive_resource(item: TokenStream) -> TokenStream {
-    let item_struct =
-        syn::parse::<syn::ItemStruct>(item.clone()).expect("Cannot use this macro here");
-    let ident = item_struct.ident;
-    let generics = item_struct.generics;
-
-    quote! {
-        impl #generics ecs::Resource for #ident #generics {
-            fn as_any(&self) -> &dyn core::any::Any {
-                self
-            }
-
-            fn as_mut_any(&mut self) -> &mut dyn core::any::Any {
-                self
-            }
-        }
-
-        impl #generics ecs::component::Component for #ident #generics {
-            fn info(&self) -> ecs::component::ComponentInfo {
-                ecs::component::ComponentInfo::new(ecs::component::ComponentId(0), 0) // ignored
-            }
-
-            fn info_static() -> ecs::component::ComponentInfo {
-                ecs::component::ComponentInfo::new(ecs::component::ComponentId(0), 0) // ignored
-            }
-        }
-    }
-    .into()
-}

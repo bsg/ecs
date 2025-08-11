@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use crate::{self as ecs, Res, ResMut, With, Without};
-    use codegen::{Component, Resource};
+    use crate::{self as ecs, With, Without};
+    use codegen::Component;
 
     use crate::{Entity, World};
 
@@ -17,12 +17,6 @@ mod tests {
     #[derive(Component)]
     struct Z {}
 
-    #[derive(Resource)]
-    struct R1(u32);
-
-    #[derive(Resource)]
-    struct R2(u32);
-
     struct Ctx;
     impl ecs::Ctx for Ctx {}
 
@@ -33,7 +27,7 @@ mod tests {
         let entity_ref = world.spawn(&[&A(42u32), &B(false), &C(Some("a"))]);
         assert_eq!(entity_ref.0, 1);
 
-        let (_, index) = world.entities().get(1).unwrap().clone().unwrap();
+        let (_, index) = (*world.entities().get(1).unwrap()).unwrap();
         assert_eq!(index, 0);
 
         assert_eq!(world.component::<A>(Entity(1)).unwrap().0, 42);
@@ -193,7 +187,7 @@ mod tests {
         let e = world.spawn(&[&A(3)]);
         world.spawn(&[&A(4)]);
 
-        world.despawn(e);
+        unsafe { world.despawn(e) };
 
         let mut sum = 0;
         world.run(|a: &A| {
@@ -213,36 +207,9 @@ mod tests {
         world.spawn(&[&A(4)]);
         world.spawn(&[&A(5)]);
 
-        world.despawn(Entity(3));
+        unsafe { world.despawn(Entity(3)) };
         assert_eq!(world.spawn(&[&A(3)]), Entity(3));
         assert_eq!(world.spawn(&[&A(6)]), Entity(6));
-    }
-
-    #[test]
-    fn resources() {
-        let world: World<Ctx> = World::new();
-
-        world.add_resource(R1(111));
-        world.add_resource(R2(0));
-        assert_eq!(world.resource::<R1>().unwrap().0, 111);
-        assert_eq!(world.resource::<R2>().unwrap().0, 0);
-
-        world.resource_mut::<R1>().unwrap().0 = 222;
-        assert_eq!(world.resource::<R1>().unwrap().0, 222);
-
-        world.spawn(&[&A(1)]);
-
-        world.run(|_: &A, r: Res<R1>| {
-            assert_eq!((*r).0, 222);
-        });
-
-        world.run(|_: &A, mut r: ResMut<R1>| {
-            (*r).0 = 123;
-        });
-
-        world.run(|_: &A, r: Res<R1>| {
-            assert_eq!((*r).0, 123);
-        });
     }
 
     #[test]
