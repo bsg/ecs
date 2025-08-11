@@ -415,7 +415,7 @@ impl<C: Ctx> World<C> {
         }
     }
 
-    pub fn init_ctx(&mut self, ctx: C) {
+    pub fn init_ctx(&self, ctx: C) {
         unsafe { self.inner.get().as_mut().unwrap().ctx = MaybeUninit::new(ctx) }
     }
 
