@@ -56,16 +56,11 @@ impl Component for Entity {
 }
 
 trait QueryParam<'a, T, A, C: Ctx> {
-    fn info() -> ComponentInfo;
     fn access(world: &'a World<C>, list: Option<&'a ComponentList>, index: usize) -> A;
     fn match_archetype(archetype: &Archetype) -> bool;
 }
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a T, C> for &'a T {
-    fn info() -> ComponentInfo {
-        T::info_static()
-    }
-
     #[inline(always)]
     fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> &'a T {
         unsafe { store.unwrap_unchecked().read::<T>(index) }
@@ -77,10 +72,6 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a T, C> for &'a T {
 }
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a mut T, C> for &'a mut T {
-    fn info() -> ComponentInfo {
-        T::info_static()
-    }
-
     #[inline(always)]
     fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> &'a mut T {
         unsafe { store.unwrap_unchecked().read_mut::<T>(index) }
@@ -92,10 +83,6 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a mut T, C> for &'a
 }
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a T>, C> for Option<&'a T> {
-    fn info() -> ComponentInfo {
-        T::info_static()
-    }
-
     #[inline(always)]
     fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> Option<&'a T> {
         unsafe { store.map(|list| list.read::<T>(index)) }
@@ -109,10 +96,6 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a T>, C> for
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a mut T>, C>
     for Option<&'a mut T>
 {
-    fn info() -> ComponentInfo {
-        T::info_static()
-    }
-
     #[inline(always)]
     fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> Option<&'a mut T> {
         unsafe { store.map(|list| list.read_mut::<T>(index)) }
@@ -134,10 +117,6 @@ impl<'a, T: Resource + 'static> Deref for Res<'a, T> {
 }
 
 impl<'a, T: Resource + 'static, C: Ctx> QueryParam<'a, T, Res<'a, T>, C> for Res<'_, T> {
-    fn info() -> ComponentInfo {
-        ComponentInfo::new(ComponentId(0), 0) // ignored
-    }
-
     #[inline(always)]
     fn access(world: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> Res<'a, T> {
         match world.resource::<T>() {
@@ -168,10 +147,6 @@ impl<'a, T: Resource + 'static> DerefMut for ResMut<'a, T> {
 }
 
 impl<'a, T: Resource + 'static, C: Ctx> QueryParam<'a, T, ResMut<'a, T>, C> for ResMut<'_, T> {
-    fn info() -> ComponentInfo {
-        ComponentInfo::new(ComponentId(0), 0) // ignored
-    }
-
     #[inline(always)]
     fn access(world: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> ResMut<'a, T> {
         match world.resource_mut::<T>() {
@@ -190,10 +165,6 @@ pub struct With<T: Component> {
 }
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, With<T>, C> for With<T> {
-    fn info() -> ComponentInfo {
-        T::info_static()
-    }
-
     #[inline(always)]
     fn access(_: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> With<T> {
         With {
@@ -211,10 +182,6 @@ pub struct Without<T: Component> {
 }
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Without<T>, C> for Without<T> {
-    fn info() -> ComponentInfo {
-        T::info_static()
-    }
-
     #[inline(always)]
     fn access(_: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> Without<T> {
         Without {
@@ -550,22 +517,22 @@ impl<C: Ctx> World<C> {
         entity
     }
 
-    pub fn despawn(&self, entity: Entity) {
-        unsafe {
-            if entity == Entity(0) {
-                return;
-            }
+    /// This is marked 'unsafe' because it's likely that component specific teardown
+    /// will need to be implemented by the user
+    pub unsafe fn despawn(&self, entity: Entity) {
+        if entity == Entity(0) {
+            return;
+        }
 
-            if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
-                let store = self.stores_mut().get_mut(archetype).unwrap();
+        if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
+            let store = self.stores_mut().get_mut(archetype).unwrap();
 
-                *store.read_mut::<Entity>(*index) = Entity(0);
-                store.free_index(*index);
+            *store.read_mut::<Entity>(*index) = Entity(0);
+            store.free_index(*index);
 
-                *self.entities_mut().get_mut(*entity as usize).unwrap() = None;
+            *self.entities_mut().get_mut(*entity as usize).unwrap() = None;
 
-                self.free_entities_mut().insert(entity);
-            }
+            self.free_entities_mut().insert(entity);
         }
     }
 
