@@ -332,7 +332,6 @@ struct WorldInner<C: Ctx> {
     ctx: MaybeUninit<C>, // TODO  drop
 }
 
-// TODO need accessors for the inner containers because the code is littered with inner.get().as_mut().unwrap_unchecked()
 pub struct World<C: Ctx> {
     inner: UnsafeCell<WorldInner<C>>,
 }
