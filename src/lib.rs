@@ -336,6 +336,9 @@ pub struct World<C: Ctx> {
     inner: UnsafeCell<WorldInner<C>>,
 }
 
+unsafe impl<C: Ctx> Send for World<C> {}
+unsafe impl<C: Ctx> Sync for World<C> {}
+
 #[allow(dead_code)]
 impl<C: Ctx> World<C> {
     pub fn new() -> Self {
@@ -642,19 +645,8 @@ impl<C: Ctx> World<C> {
         Result::Err(())
     }
 
-    pub fn ctx(&self) -> &C {
-        unsafe {
-            self.inner
-                .get()
-                .as_ref()
-                .unwrap_unchecked()
-                .ctx
-                .assume_init_ref()
-        }
-    }
-
     #[allow(clippy::mut_from_ref)]
-    pub fn ctx_mut(&self) -> &mut C {
+    pub fn ctx(&self) -> &mut C {
         unsafe {
             self.inner
                 .get()
