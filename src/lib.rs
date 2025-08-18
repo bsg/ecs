@@ -384,7 +384,7 @@ impl<C: Ctx> World<C> {
         unsafe { &mut self.inner.get().as_mut().unwrap_unchecked().free_entities }
     }
 
-    pub fn spawn(&self, bundle: &[&(dyn Component + Send)]) -> Entity {
+    pub fn spawn(&self, bundle: &[&(dyn Component)]) -> Entity {
         let entity = self
             .free_entities_mut()
             .pop_first()
@@ -417,7 +417,8 @@ impl<C: Ctx> World<C> {
     }
 
     // TODO tests
-    pub fn insert(&self, entity: Entity, bundle: &[&(dyn Component + Send)]) -> Entity {
+    // TODO this is almost identical to spawn(). dedup
+    pub fn insert(&self, entity: Entity, bundle: &[&(dyn Component)]) -> Entity {
         let mut archetype = Archetype::new();
 
         for item in bundle {
@@ -439,6 +440,7 @@ impl<C: Ctx> World<C> {
 
         if *entity as usize >= self.entities().len() {
             self.entities_mut().resize(*entity as usize + 1, None);
+            // TODO add the slots in the gap to the free list
         }
         self.entities_mut().as_mut_slice()[*entity as usize] = Some((archetype, index));
         self.free_entities_mut().remove(&entity);
