@@ -15,7 +15,6 @@ use store::{ComponentList, Store};
 use core::panic;
 use std::mem::MaybeUninit;
 use std::{
-    cell::UnsafeCell,
     collections::{BTreeSet, HashMap},
     marker::PhantomData,
     mem,
@@ -333,7 +332,7 @@ struct WorldInner<C: Ctx> {
 }
 
 pub struct World<C: Ctx> {
-    inner: UnsafeCell<WorldInner<C>>,
+    inner: *mut WorldInner<C>,
 }
 
 unsafe impl<C: Ctx> Send for World<C> {}
@@ -343,45 +342,53 @@ unsafe impl<C: Ctx> Sync for World<C> {}
 impl<C: Ctx> World<C> {
     pub fn new() -> Self {
         World {
-            inner: UnsafeCell::new(WorldInner {
+            inner: Box::into_raw(Box::new(WorldInner {
                 // Entity(0) is used to mark deleted columns
                 entities: vec![None],
                 stores: HashMap::new(),
                 free_entities: BTreeSet::new(),
                 ctx: MaybeUninit::<C>::uninit(),
-            }),
+            })),
         }
     }
 
+    pub unsafe fn from_raw(ptr: *mut u8) -> Self {
+        World { inner: ptr.cast() }
+    }
+
+    pub unsafe fn as_raw(&self) -> *mut u8 {
+        self.inner.cast()
+    }
+
     pub fn set_ctx(&self, ctx: C) {
-        unsafe { self.inner.get().as_mut().unwrap_unchecked().ctx = MaybeUninit::new(ctx) }
+        unsafe { (&mut *self.inner).ctx = MaybeUninit::new(ctx) }
     }
 
     fn entities(&self) -> &Vec<Option<(Archetype, usize)>> {
-        unsafe { &self.inner.get().as_ref().unwrap_unchecked().entities }
+        unsafe { &(&mut *self.inner).entities }
     }
 
     #[allow(clippy::mut_from_ref)]
     fn entities_mut(&self) -> &mut Vec<Option<(Archetype, usize)>> {
-        unsafe { &mut self.inner.get().as_mut().unwrap_unchecked().entities }
+        unsafe { &mut (&mut *self.inner).entities }
     }
 
     fn stores(&self) -> &HashMap<Archetype, Store> {
-        unsafe { &self.inner.get().as_ref().unwrap_unchecked().stores }
+        unsafe { &(&*self.inner).stores }
     }
 
     #[allow(clippy::mut_from_ref)]
     fn stores_mut(&self) -> &mut HashMap<Archetype, Store> {
-        unsafe { &mut self.inner.get().as_mut().unwrap_unchecked().stores }
+        unsafe { &mut (&mut *self.inner).stores }
     }
 
     fn free_entities(&self) -> &BTreeSet<Entity> {
-        unsafe { &self.inner.get().as_ref().unwrap_unchecked().free_entities }
+        unsafe { &(&*self.inner).free_entities }
     }
 
     #[allow(clippy::mut_from_ref)]
     fn free_entities_mut(&self) -> &mut BTreeSet<Entity> {
-        unsafe { &mut self.inner.get().as_mut().unwrap_unchecked().free_entities }
+        unsafe { &mut (&mut *self.inner).free_entities }
     }
 
     pub fn spawn(&self, bundle: &[&(dyn Component)]) -> Entity {
@@ -649,14 +656,7 @@ impl<C: Ctx> World<C> {
 
     #[allow(clippy::mut_from_ref)]
     pub fn ctx(&self) -> &mut C {
-        unsafe {
-            self.inner
-                .get()
-                .as_mut()
-                .unwrap_unchecked()
-                .ctx
-                .assume_init_mut()
-        }
+        unsafe { (&mut *self.inner).ctx.assume_init_mut() }
     }
 
     pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params, C>) {
