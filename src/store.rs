@@ -123,13 +123,6 @@ impl Store {
         self.free_indices.insert(index);
     }
 
-    pub unsafe fn read<T: Component + 'static>(&self, entity_index: usize) -> &T {
-        self.data
-            .get(&T::info_static().id())
-            .unwrap()
-            .read::<T>(entity_index)
-    }
-
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn read_mut<T: Component + 'static>(&self, entity_index: usize) -> &mut T {
         self.data
