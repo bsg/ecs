@@ -11,11 +11,21 @@ lazy_static! {
 
 #[proc_macro_derive(Component)]
 pub fn derive_component(item: TokenStream) -> TokenStream {
-    let item_struct =
-        syn::parse::<syn::ItemStruct>(item.clone()).expect("Cannot use this macro here");
-    let ident = item_struct.ident;
-    let generics = item_struct.generics;
-    let id = NEXT_COMPONENT_ID.fetch_add(1, Ordering::Relaxed);
+    let (ident, generics, id) = if let Ok(item) = syn::parse::<syn::ItemStruct>(item.clone()) {
+        (
+            item.ident,
+            item.generics,
+            NEXT_COMPONENT_ID.fetch_add(1, Ordering::Relaxed),
+        )
+    } else if let Ok(item) = syn::parse::<syn::ItemEnum>(item.clone()) {
+        (
+            item.ident,
+            item.generics,
+            NEXT_COMPONENT_ID.fetch_add(1, Ordering::Relaxed),
+        )
+    } else {
+        panic!("Cannot use this macro here")
+    };
 
     quote! {
         impl #generics ecs::component::Component for #ident #generics {
