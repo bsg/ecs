@@ -35,6 +35,11 @@ impl ArchetypeBuilder {
         self
     }
 
+    pub fn set_from_info(mut self, info: ComponentInfo) -> ArchetypeBuilder {
+        self.0.set(info);
+        self
+    }
+
     pub fn build(self) -> Archetype {
         self.0
     }
@@ -53,14 +58,14 @@ impl Deref for Entity {
 
 impl Component for Entity {
     fn info(&self) -> ComponentInfo {
-        ComponentInfo::new(ComponentId(0), mem::size_of::<Entity>())
+        ComponentInfo::new(ComponentId(0), mem::size_of::<Entity>(), "Entity")
     }
 
     fn info_static() -> ComponentInfo
     where
         Self: Sized,
     {
-        ComponentInfo::new(ComponentId(0), mem::size_of::<Entity>())
+        ComponentInfo::new(ComponentId(0), mem::size_of::<Entity>(), "Entity")
     }
 }
 

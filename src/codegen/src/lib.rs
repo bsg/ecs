@@ -30,11 +30,11 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
     quote! {
         impl #generics ecs::component::Component for #ident #generics {
             fn info(&self) -> ecs::component::ComponentInfo {
-                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>())
+                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), "#ident")
             }
 
             fn info_static() -> ecs::component::ComponentInfo {
-                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>())
+                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), "#ident")
             }
         }
     }

@@ -18,17 +18,20 @@ pub trait Component {
         Self: Sized;
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub struct ComponentInfo {
     id: ComponentId,
     size: u32,
+    name: &'static str,
 }
 
 impl ComponentInfo {
-    pub fn new(id: ComponentId, size: usize) -> Self {
+    pub fn new(id: ComponentId, size: usize, name: &'static str) -> Self {
         ComponentInfo {
             id,
             size: u32::try_from(size).expect("Component size too large"),
+            name,
         }
     }
 
