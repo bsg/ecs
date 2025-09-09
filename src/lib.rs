@@ -21,6 +21,25 @@ use std::{
     ops::Deref,
 };
 
+pub struct ArchetypeBuilder(Archetype);
+impl ArchetypeBuilder {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> ArchetypeBuilder {
+        let mut archetype = Archetype::new();
+        archetype.set(Entity::info_static());
+        ArchetypeBuilder(archetype)
+    }
+
+    pub fn set<T: Component>(mut self) -> ArchetypeBuilder {
+        self.0.set(T::info_static());
+        self
+    }
+
+    pub fn build(self) -> Archetype {
+        self.0
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub struct Entity(pub u32);
 
@@ -146,17 +165,15 @@ macro_rules! impl_system {
                 unsafe {
                     for (archetype, store) in world.stores_mut().iter_mut() {
                         if $($param::match_archetype(archetype)) &&+ && true {
-                            let mut item_idx = 0;
                             let len = store.len();
                             let entities = store.get_component_list::<Entity>().unwrap_unchecked();
                             $(let $list = store.get_component_list::<$t>();)+
-                            while item_idx < len {
+                            for item_idx in 0..len {
                                 if entities.read::<Entity>(item_idx).0 != 0 {
                                     self(
                                         $($param::access(world, $list, item_idx),)+
                                     );
                                 }
-                                item_idx += 1;
                             }
                         }
                     }
@@ -661,6 +678,20 @@ impl<C: Ctx> World<C> {
 
     pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params, C>) {
         f.run(self)
+    }
+
+    pub fn for_each_with_archetype(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
+        unsafe {
+            for (store_archetype, store) in self.stores_mut().iter_mut() {
+                if archetype == *store_archetype {
+                    let len = store.len();
+                    let entities = store.get_component_list::<Entity>().unwrap_unchecked();
+                    for i in 0..len {
+                        f(*entities.read(i))
+                    }
+                }
+            }
+        }
     }
 
     // TODO rename

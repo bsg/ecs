@@ -233,12 +233,12 @@ mod tests {
             store.write(100000, A(102u32));
             store.write(100000, B("102"));
 
-            assert_eq!(store.read::<A>(0).0, 100u32);
-            assert_eq!(store.read::<B>(0).0, "100");
-            assert_eq!(store.read::<A>(1).0, 101u32);
-            assert_eq!(store.read::<B>(1).0, "101");
-            assert_eq!(store.read::<A>(100000).0, 102u32);
-            assert_eq!(store.read::<B>(100000).0, "102");
+            assert_eq!(store.read_mut::<A>(0).0, 100u32);
+            assert_eq!(store.read_mut::<B>(0).0, "100");
+            assert_eq!(store.read_mut::<A>(1).0, 101u32);
+            assert_eq!(store.read_mut::<B>(1).0, "101");
+            assert_eq!(store.read_mut::<A>(100000).0, 102u32);
+            assert_eq!(store.read_mut::<B>(100000).0, "102");
         }
     }
 }

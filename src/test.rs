@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{self as ecs, With, Without};
+    use crate::{self as ecs, ArchetypeBuilder, With, Without};
     use codegen::Component;
 
     use crate::{Entity, World};
@@ -264,5 +264,24 @@ mod tests {
         assert!(world.has_component::<C>(e4));
 
         world.remove_component::<C>(e2).unwrap();
+    }
+
+    #[test]
+    fn for_each_with_archetype() {
+        let world: World<Ctx> = World::new();
+
+        world.spawn(&[&A(1)]);
+        world.spawn(&[&A(1)]);
+        world.spawn(&[&A(1), &B(false)]);
+        world.spawn(&[&A(1), &B(false)]);
+        world.spawn(&[&A(1)]);
+        world.spawn(&[&A(1)]);
+
+        let archetype = ArchetypeBuilder::new().set::<A>().build();
+        let mut acc = 0;
+        world.for_each_with_archetype(archetype, |ent| {
+            acc += world.component::<A>(ent).unwrap().0;
+        });
+        assert_eq!(4, acc);
     }
 }
