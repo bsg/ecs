@@ -1,5 +1,5 @@
 extern crate codegen;
-pub use codegen::Component;
+pub use codegen::component;
 
 mod archetype;
 pub mod component;
@@ -7,7 +7,7 @@ mod store;
 mod test;
 
 use archetype::Archetype;
-use component::{Component, ComponentId, ComponentInfo};
+use component::{ComponentId, ComponentInfo};
 use serde::Deserialize;
 use serde::Serialize;
 use store::{ComponentList, Store};
@@ -20,6 +20,8 @@ use std::{
     mem,
     ops::Deref,
 };
+
+use crate::component::Component;
 
 #[derive(Clone, Copy)]
 pub struct ArchetypeBuilder(Archetype);

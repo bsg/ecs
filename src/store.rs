@@ -199,13 +199,12 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::{ComponentList, Store};
-    use crate::{self as ecs, component::Component};
-    use codegen::Component;
+    use crate::{self as ecs, component, Component};
 
-    #[derive(Component)]
+    #[component]
     struct A(u32);
 
-    #[derive(Component)]
+    #[component]
     struct B(&'static str);
 
     #[test]

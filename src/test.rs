@@ -1,20 +1,19 @@
 #[cfg(test)]
 mod tests {
-    use crate::{self as ecs, ArchetypeBuilder, With, Without};
-    use codegen::Component;
+    use crate::{self as ecs, component, ArchetypeBuilder, With, Without};
 
     use crate::{Entity, World};
 
-    #[derive(Component)]
+    #[component]
     struct A(u32);
 
-    #[derive(Component)]
+    #[component]
     struct B(bool);
 
-    #[derive(Component)]
+    #[component]
     struct C<'a>(Option<&'a str>);
 
-    #[derive(Component)]
+    #[component]
     struct Z {}
 
     struct Ctx;
