@@ -686,6 +686,7 @@ impl<C: Ctx> World<C> {
         f.run(self)
     }
 
+    /// This could return a deleted entity so do not unwrap on ::component<..>(entity)
     pub fn for_each_with_archetype(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
         unsafe {
             for (store_archetype, store) in self.stores_mut().iter_mut() {
