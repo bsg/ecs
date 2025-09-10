@@ -21,6 +21,7 @@ use std::{
     ops::Deref,
 };
 
+#[derive(Clone, Copy)]
 pub struct ArchetypeBuilder(Archetype);
 impl ArchetypeBuilder {
     #[allow(clippy::new_without_default)]
