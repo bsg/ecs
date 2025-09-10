@@ -19,7 +19,7 @@ pub trait Component {
 }
 
 #[allow(dead_code)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ComponentInfo {
     id: ComponentId,
     size: u32,
@@ -41,5 +41,9 @@ impl ComponentInfo {
 
     pub fn size(&self) -> usize {
         self.size as usize
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.name
     }
 }
