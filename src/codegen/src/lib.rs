@@ -27,14 +27,15 @@ pub fn derive_component(item: TokenStream) -> TokenStream {
         panic!("Cannot use this macro here")
     };
 
+    let ident_str = format!("{}", ident);
     quote! {
         impl #generics ecs::component::Component for #ident #generics {
             fn info(&self) -> ecs::component::ComponentInfo {
-                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), "#ident")
+                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), #ident_str)
             }
 
             fn info_static() -> ecs::component::ComponentInfo {
-                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), "#ident")
+                ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), #ident_str)
             }
         }
     }
