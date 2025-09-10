@@ -271,17 +271,19 @@ mod tests {
         let world: World<Ctx> = World::new();
 
         world.spawn(&[&A(1)]);
-        world.spawn(&[&A(1)]);
+        world.spawn(&[&A(2)]);
+        let ent = world.spawn(&[&A(1), &B(false)]);
         world.spawn(&[&A(1), &B(false)]);
-        world.spawn(&[&A(1), &B(false)]);
-        world.spawn(&[&A(1)]);
-        world.spawn(&[&A(1)]);
+        world.spawn(&[&A(3)]);
+        world.spawn(&[&A(4)]);
+
+        unsafe { world.despawn(ent) };
 
         let archetype = ArchetypeBuilder::new().set::<A>().build();
         let mut acc = 0;
         world.for_each_with_archetype(archetype, |ent| {
             acc += world.component::<A>(ent).unwrap().0;
         });
-        assert_eq!(4, acc);
+        assert_eq!(10, acc);
     }
 }
