@@ -36,7 +36,7 @@ impl ArchetypeBuilder {
         self
     }
 
-    pub fn set_from_info(mut self, info: ComponentInfo) -> ArchetypeBuilder {
+    pub fn set_from_info(&mut self, info: ComponentInfo) -> &mut ArchetypeBuilder {
         self.0.set(info);
         self
     }
@@ -691,6 +691,22 @@ impl<C: Ctx> World<C> {
         unsafe {
             for (store_archetype, store) in self.stores_mut().iter_mut() {
                 if archetype == *store_archetype {
+                    let len = store.len();
+                    let entities = store.get_component_list::<Entity>().unwrap_unchecked();
+                    for i in 0..len {
+                        f(*entities.read(i))
+                    }
+                }
+            }
+        }
+    }
+
+    // TODO could be named better no?
+    /// This could return a deleted entity so do not unwrap on ::component<..>(entity)
+    pub fn for_each_with_archetype_subset(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
+        unsafe {
+            for (store_archetype, store) in self.stores_mut().iter_mut() {
+                if archetype.subset_of(*store_archetype) {
                     let len = store.len();
                     let entities = store.get_component_list::<Entity>().unwrap_unchecked();
                     for i in 0..len {

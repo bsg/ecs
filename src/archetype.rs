@@ -45,7 +45,11 @@ impl Archetype {
     }
 
     #[inline(always)]
-    pub(crate) fn contains(&self, info: ComponentInfo) -> bool {
+    pub fn contains(&self, info: ComponentInfo) -> bool {
         self.contains_id(*info.id() as usize)
+    }
+
+    pub fn subset_of(&self, other: Archetype) -> bool {
+        (self.bitfield & other.bitfield) == self.bitfield
     }
 }
