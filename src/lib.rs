@@ -1,5 +1,4 @@
-extern crate codegen;
-pub use codegen::component;
+pub use ecs_codegen::component;
 
 mod archetype;
 pub mod component;
