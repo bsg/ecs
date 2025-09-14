@@ -384,6 +384,10 @@ impl<C: Ctx> World<C> {
         self.inner.cast()
     }
 
+    pub unsafe fn set_inner_from_raw(&mut self, ptr: *mut u8) {
+        self.inner = ptr.cast();
+    }
+
     pub fn set_ctx(&self, ctx: C) {
         unsafe { (&mut *self.inner).ctx = MaybeUninit::new(ctx) }
     }
