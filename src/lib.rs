@@ -419,7 +419,7 @@ impl<C: Ctx> World<C> {
         unsafe { &mut (&mut *self.inner).free_entities }
     }
 
-    pub fn spawn(&self, bundle: &[&(dyn Component)]) -> Entity {
+    pub fn spawn(&self, bundle: &[&dyn Component]) -> Entity {
         let entity = self
             .free_entities_mut()
             .pop_first()
@@ -453,7 +453,7 @@ impl<C: Ctx> World<C> {
 
     // TODO tests
     // TODO this is almost identical to spawn(). dedup
-    pub fn insert(&self, entity: Entity, bundle: &[&(dyn Component)]) -> Entity {
+    pub fn insert(&self, entity: Entity, bundle: &[&dyn Component]) -> Entity {
         let mut archetype = Archetype::new();
 
         for item in bundle {
