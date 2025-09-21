@@ -441,6 +441,41 @@ impl<C: Ctx> World<C> {
         entity
     }
 
+    // FIXME this shares a ton of code with spawn()
+    pub fn spawn_from_slice_of_boxes(&self, bundle: &[Box<dyn Component>]) -> Entity {
+        let entity = self
+            .inner()
+            .free_entities
+            .pop_first()
+            .unwrap_or(Entity(self.inner().entities.len() as u32));
+
+        let mut archetype = Archetype::new();
+
+        for item in bundle {
+            archetype.set(item.info());
+        }
+
+        archetype.set(Entity::info_static());
+
+        self.inner()
+            .stores
+            .entry(archetype)
+            .or_insert_with(Store::new);
+
+        let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
+        let index = store.reserve_index();
+        unsafe { store.write::<Entity>(index, entity) };
+        for item in bundle {
+            unsafe { store.write_any(item.info(), index, &**item) };
+        }
+        match self.inner().entities.get_mut(*entity as usize) {
+            Some(p) => *p = Some((archetype, index)),
+            None => self.inner().entities.push(Some((archetype, index))),
+        }
+
+        entity
+    }
+
     // TODO tests
     // TODO this is almost identical to spawn(). dedup
     pub fn insert(&self, entity: Entity, bundle: &[&dyn Component]) -> Entity {
