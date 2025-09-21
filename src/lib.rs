@@ -13,6 +13,7 @@ use store::{ComponentList, Store};
 
 use core::panic;
 use std::mem::MaybeUninit;
+use std::sync::atomic::AtomicUsize;
 use std::{
     collections::{BTreeSet, HashMap},
     marker::PhantomData,
@@ -170,7 +171,7 @@ macro_rules! impl_system {
         {
             fn run(&mut self, world: &'a World<C>) {
                 unsafe {
-                    for (archetype, store) in world.stores_mut().iter_mut() {
+                    for (archetype, store) in world.inner().stores.iter_mut() {
                         if $($param::match_archetype(archetype)) &&+ && true {
                             let len = store.len();
                             let entities = store.get_component_list::<Entity>().unwrap_unchecked();
@@ -348,11 +349,18 @@ impl_system!(
 
 pub trait Ctx {}
 
+enum Cmd {
+    AddComponent((Entity, ComponentInfo, Box<dyn Component>)),
+    RemoveComponent((Entity, ComponentInfo)),
+}
+
 struct WorldInner<C: Ctx> {
     entities: Vec<Option<(Archetype, usize)>>,
     stores: HashMap<Archetype, Store>,
     free_entities: BTreeSet<Entity>,
-    ctx: MaybeUninit<C>, // TODO  drop
+    ctx: MaybeUninit<C>, // TODO drop
+    cmd_queue: Vec<Cmd>,
+    num_systems_running: AtomicUsize,
 }
 
 pub struct World<C: Ctx> {
@@ -372,6 +380,8 @@ impl<C: Ctx> World<C> {
                 stores: HashMap::new(),
                 free_entities: BTreeSet::new(),
                 ctx: MaybeUninit::<C>::uninit(),
+                cmd_queue: Vec::default(),
+                num_systems_running: AtomicUsize::new(0),
             })),
         }
     }
@@ -392,38 +402,17 @@ impl<C: Ctx> World<C> {
         unsafe { (&mut *self.inner).ctx = MaybeUninit::new(ctx) }
     }
 
-    fn entities(&self) -> &Vec<Option<(Archetype, usize)>> {
-        unsafe { &(&mut *self.inner).entities }
-    }
-
     #[allow(clippy::mut_from_ref)]
-    fn entities_mut(&self) -> &mut Vec<Option<(Archetype, usize)>> {
-        unsafe { &mut (&mut *self.inner).entities }
-    }
-
-    fn stores(&self) -> &HashMap<Archetype, Store> {
-        unsafe { &(&*self.inner).stores }
-    }
-
-    #[allow(clippy::mut_from_ref)]
-    fn stores_mut(&self) -> &mut HashMap<Archetype, Store> {
-        unsafe { &mut (&mut *self.inner).stores }
-    }
-
-    fn free_entities(&self) -> &BTreeSet<Entity> {
-        unsafe { &(&*self.inner).free_entities }
-    }
-
-    #[allow(clippy::mut_from_ref)]
-    fn free_entities_mut(&self) -> &mut BTreeSet<Entity> {
-        unsafe { &mut (&mut *self.inner).free_entities }
+    fn inner(&self) -> &mut WorldInner<C> {
+        unsafe { &mut *self.inner }
     }
 
     pub fn spawn(&self, bundle: &[&dyn Component]) -> Entity {
         let entity = self
-            .free_entities_mut()
+            .inner()
+            .free_entities
             .pop_first()
-            .unwrap_or(Entity(self.entities().len() as u32));
+            .unwrap_or(Entity(self.inner().entities.len() as u32));
 
         let mut archetype = Archetype::new();
 
@@ -433,19 +422,20 @@ impl<C: Ctx> World<C> {
 
         archetype.set(Entity::info_static());
 
-        if !self.stores().contains_key(&archetype) {
-            self.stores_mut().insert(archetype, Store::new());
-        }
+        self.inner()
+            .stores
+            .entry(archetype)
+            .or_insert_with(Store::new);
 
-        let store = unsafe { self.stores_mut().get_mut(&archetype).unwrap_unchecked() };
+        let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
         let index = store.reserve_index();
         unsafe { store.write::<Entity>(index, entity) };
         for item in bundle {
             unsafe { store.write_any(item.info(), index, *item) };
         }
-        match self.entities_mut().get_mut(*entity as usize) {
+        match self.inner().entities.get_mut(*entity as usize) {
             Some(p) => *p = Some((archetype, index)),
-            None => self.entities_mut().push(Some((archetype, index))),
+            None => self.inner().entities.push(Some((archetype, index))),
         }
 
         entity
@@ -462,23 +452,24 @@ impl<C: Ctx> World<C> {
 
         archetype.set(Entity::info_static());
 
-        if !self.stores().contains_key(&archetype) {
-            self.stores_mut().insert(archetype, Store::new());
-        }
+        self.inner()
+            .stores
+            .entry(archetype)
+            .or_insert_with(Store::new);
 
-        let store = unsafe { self.stores_mut().get_mut(&archetype).unwrap_unchecked() };
+        let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
         let index = store.reserve_index();
         unsafe { store.write::<Entity>(index, entity) };
         for item in bundle {
             unsafe { store.write_any(item.info(), index, *item) };
         }
 
-        if *entity as usize >= self.entities().len() {
-            self.entities_mut().resize(*entity as usize + 1, None);
+        if *entity as usize >= self.inner().entities.len() {
+            self.inner().entities.resize(*entity as usize + 1, None);
             // TODO add the slots in the gap to the free list
         }
-        self.entities_mut().as_mut_slice()[*entity as usize] = Some((archetype, index));
-        self.free_entities_mut().remove(&entity);
+        self.inner().entities.as_mut_slice()[*entity as usize] = Some((archetype, index));
+        self.inner().free_entities.remove(&entity);
 
         entity
     }
@@ -491,25 +482,27 @@ impl<C: Ctx> World<C> {
             return;
         }
 
-        if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
-            let store = self.stores_mut().get_mut(archetype).unwrap_unchecked();
+        if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
+            let store = self.inner().stores.get_mut(archetype).unwrap_unchecked();
 
             *store.read_mut::<Entity>(*index) = Entity(0);
             store.free_index(*index);
 
             *self
-                .entities_mut()
+                .inner()
+                .entities
                 .get_mut(*entity as usize)
                 .unwrap_unchecked() = None;
 
-            self.free_entities_mut().insert(entity);
+            self.inner().free_entities.insert(entity);
         }
     }
 
     pub fn has_component<T: Component + 'static>(&self, entity: Entity) -> bool {
-        if let Some(Some((archetype, _))) = self.entities().get(*entity as usize) {
+        if let Some(Some((archetype, _))) = self.inner().entities.get(*entity as usize) {
             unsafe {
-                self.stores()
+                self.inner()
+                    .stores
                     .get(archetype)
                     .unwrap_unchecked()
                     .has_component::<T>()
@@ -521,8 +514,9 @@ impl<C: Ctx> World<C> {
 
     pub fn component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
         unsafe {
-            if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
-                self.stores()
+            if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
+                self.inner()
+                    .stores
                     .get(archetype)
                     .unwrap_unchecked()
                     .try_read::<T>(*index)
@@ -535,8 +529,9 @@ impl<C: Ctx> World<C> {
     #[allow(clippy::mut_from_ref)]
     pub fn component_mut<T: Component + 'static>(&self, entity: Entity) -> Option<&mut T> {
         unsafe {
-            if let Some(Some((archetype, index))) = self.entities().get(*entity as usize) {
-                self.stores_mut()
+            if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
+                self.inner()
+                    .stores
                     .get_mut(archetype)
                     .unwrap_unchecked()
                     .try_read_mut::<T>(*index)
@@ -546,12 +541,30 @@ impl<C: Ctx> World<C> {
         }
     }
 
-    pub fn add_component<T: Component + 'static>(
+    pub fn add_component<T: Component + 'static>(&self, entity: Entity, component: T) {
+        if self
+            .inner()
+            .num_systems_running
+            .load(std::sync::atomic::Ordering::Relaxed)
+            == 0
+        {
+            let _ = self._add_component(entity, T::info_static(), &component);
+        } else {
+            self.inner().cmd_queue.push(Cmd::AddComponent((
+                entity,
+                T::info_static(),
+                Box::new(component),
+            )));
+        }
+    }
+
+    fn _add_component(
         &self,
         entity: Entity,
-        component: T,
+        component_info: ComponentInfo,
+        component: &dyn Component,
     ) -> Result<(), ()> {
-        if let Some(Some((archetype, index))) = self.entities_mut().get_mut(*entity as usize) {
+        if let Some(Some((archetype, index))) = self.inner().entities.get_mut(*entity as usize) {
             let mut new_archetype = *archetype;
             new_archetype.set(component.info());
 
@@ -559,12 +572,18 @@ impl<C: Ctx> World<C> {
                 return Result::Err(());
             }
 
-            if !self.stores().contains_key(&new_archetype) {
-                self.stores_mut().insert(new_archetype, Store::new());
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.inner().stores.entry(new_archetype)
+            {
+                e.insert(Store::new());
 
-                let store = unsafe { self.stores_mut().get_mut(archetype).unwrap_unchecked() };
-                let new_store =
-                    unsafe { self.stores_mut().get_mut(&new_archetype).unwrap_unchecked() };
+                let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
+                let new_store = unsafe {
+                    self.inner()
+                        .stores
+                        .get_mut(&new_archetype)
+                        .unwrap_unchecked()
+                };
                 for id in 0..128 {
                     unsafe {
                         if let Some(list) = store.get_component_list_by_id(ComponentId(id as u32)) {
@@ -579,8 +598,13 @@ impl<C: Ctx> World<C> {
                 }
             }
 
-            let store = unsafe { self.stores_mut().get_mut(archetype).unwrap_unchecked() };
-            let new_store = unsafe { self.stores_mut().get_mut(&new_archetype).unwrap_unchecked() };
+            let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
+            let new_store = unsafe {
+                self.inner()
+                    .stores
+                    .get_mut(&new_archetype)
+                    .unwrap_unchecked()
+            };
             let new_index = new_store.reserve_index();
 
             for id in 0..128 {
@@ -603,7 +627,7 @@ impl<C: Ctx> World<C> {
             unsafe { store.write::<Entity>(*index, Entity(0)) };
             store.free_index(*index);
 
-            unsafe { new_store.write(new_index, component) };
+            unsafe { new_store.write_any(component_info, new_index, component) };
 
             *archetype = new_archetype;
             *index = new_index;
@@ -614,27 +638,47 @@ impl<C: Ctx> World<C> {
         Result::Err(())
     }
 
-    pub fn remove_component<T: Component + 'static>(&self, entity: Entity) -> Result<(), ()> {
-        if let Some(Some((archetype, index))) = self.entities_mut().get_mut(*entity as usize) {
+    pub fn remove_component<T: Component + 'static>(&self, entity: Entity) {
+        if self
+            .inner()
+            .num_systems_running
+            .load(std::sync::atomic::Ordering::Relaxed)
+            == 0
+        {
+            let _ = self._remove_component(entity, T::info_static());
+        } else {
+            self.inner()
+                .cmd_queue
+                .push(Cmd::RemoveComponent((entity, T::info_static())));
+        }
+    }
+
+    fn _remove_component(&self, entity: Entity, component_info: ComponentInfo) -> Result<(), ()> {
+        if let Some(Some((archetype, index))) = self.inner().entities.get_mut(*entity as usize) {
             let mut new_archetype = *archetype;
-            new_archetype.unset(T::info_static());
+            new_archetype.unset(component_info);
 
             if *archetype == new_archetype {
                 return Result::Err(());
             }
 
-            if !self.stores().contains_key(&new_archetype) {
+            if !self.inner().stores.contains_key(&new_archetype) {
                 if self
-                    .stores_mut()
+                    .inner()
+                    .stores
                     .insert(new_archetype, Store::new())
                     .is_some()
                 {
                     panic!("")
                 }
 
-                let store = unsafe { self.stores_mut().get_mut(archetype).unwrap_unchecked() };
-                let new_store =
-                    unsafe { self.stores_mut().get_mut(&new_archetype).unwrap_unchecked() };
+                let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
+                let new_store = unsafe {
+                    self.inner()
+                        .stores
+                        .get_mut(&new_archetype)
+                        .unwrap_unchecked()
+                };
                 for id in 0..128usize {
                     unsafe {
                         if let Some(list) = store.get_component_list_by_id(ComponentId(id as u32)) {
@@ -649,8 +693,13 @@ impl<C: Ctx> World<C> {
                 }
             }
 
-            let store = unsafe { self.stores_mut().get_mut(archetype).unwrap_unchecked() };
-            let new_store = unsafe { self.stores_mut().get_mut(&new_archetype).unwrap_unchecked() };
+            let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
+            let new_store = unsafe {
+                self.inner()
+                    .stores
+                    .get_mut(&new_archetype)
+                    .unwrap_unchecked()
+            };
             let new_index = new_store.reserve_index();
 
             for id in 0..128usize {
@@ -687,14 +736,68 @@ impl<C: Ctx> World<C> {
         unsafe { (&mut *self.inner).ctx.assume_init_mut() }
     }
 
+    fn increment_num_running_systems(&self) -> usize {
+        let mut current = self
+            .inner()
+            .num_systems_running
+            .load(std::sync::atomic::Ordering::Relaxed);
+        loop {
+            let new = current + 1;
+            match self.inner().num_systems_running.compare_exchange(
+                current,
+                new,
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+            ) {
+                Ok(_) => return new,
+                Err(v) => current = v,
+            }
+        }
+    }
+
+    fn decrement_num_running_systems(&self) -> usize {
+        let mut current = self
+            .inner()
+            .num_systems_running
+            .load(std::sync::atomic::Ordering::Relaxed);
+        loop {
+            let new = current - 1;
+            match self.inner().num_systems_running.compare_exchange(
+                current,
+                new,
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+            ) {
+                Ok(_) => return new,
+                Err(v) => current = v,
+            }
+        }
+    }
+
     pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params, C>) {
-        f.run(self)
+        self.increment_num_running_systems();
+        f.run(self);
+        let num_running_systems = self.decrement_num_running_systems();
+
+        if num_running_systems == 0 {
+            for cmd in &self.inner().cmd_queue {
+                match cmd {
+                    Cmd::AddComponent((ent, info, component)) => {
+                        let _ = self._add_component(*ent, *info, component.as_ref());
+                    }
+                    Cmd::RemoveComponent((ent, info)) => {
+                        let _ = self._remove_component(*ent, *info);
+                    }
+                };
+            }
+            self.inner().cmd_queue.clear();
+        }
     }
 
     /// This could return a deleted entity so do not unwrap on ::component<..>(entity)
     pub fn for_each_with_archetype(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
         unsafe {
-            for (store_archetype, store) in self.stores_mut().iter_mut() {
+            for (store_archetype, store) in self.inner().stores.iter_mut() {
                 if archetype == *store_archetype {
                     let len = store.len();
                     let entities = store.get_component_list::<Entity>().unwrap_unchecked();
@@ -710,7 +813,7 @@ impl<C: Ctx> World<C> {
     /// This could return a deleted entity so do not unwrap on ::component<..>(entity)
     pub fn for_each_with_archetype_subset(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
         unsafe {
-            for (store_archetype, store) in self.stores_mut().iter_mut() {
+            for (store_archetype, store) in self.inner().stores.iter_mut() {
                 if archetype.subset_of(*store_archetype) {
                     let len = store.len();
                     let entities = store.get_component_list::<Entity>().unwrap_unchecked();
@@ -724,7 +827,7 @@ impl<C: Ctx> World<C> {
 
     // TODO rename
     pub fn num_entities_upper_bound(&self) -> u32 {
-        self.entities().len() as u32
+        self.inner().entities.len() as u32
     }
 }
 

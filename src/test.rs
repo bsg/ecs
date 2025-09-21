@@ -26,7 +26,7 @@ mod tests {
         let entity_ref = world.spawn(&[&A(42u32), &B(false), &C(Some("a"))]);
         assert_eq!(entity_ref.0, 1);
 
-        let (_, index) = (*world.entities().get(1).unwrap()).unwrap();
+        let (_, index) = (*world.inner().entities.get(1).unwrap()).unwrap();
         assert_eq!(index, 0);
 
         assert_eq!(world.component::<A>(Entity(1)).unwrap().0, 42);
@@ -242,8 +242,8 @@ mod tests {
         let e3 = world.spawn(&[&A(3)]);
         let e4 = world.spawn(&[&A(4), &C(Some("bar"))]);
 
-        world.add_component(e2, C(Some("foo"))).unwrap();
-        world.add_component(e2, C(Some("foo"))).expect_err("");
+        world.add_component(e2, C(Some("foo")));
+        world.add_component(e2, C(Some("foo")));
         assert!(world.has_component::<A>(e2));
         assert!(world.has_component::<C>(e2));
         assert_eq!(world.component::<A>(e2).unwrap().0, 2);
@@ -253,8 +253,8 @@ mod tests {
         assert!(world.has_component::<A>(e1));
         assert!(world.has_component::<A>(e2));
 
-        world.remove_component::<A>(e2).unwrap();
-        world.remove_component::<A>(e2).expect_err("");
+        world.remove_component::<A>(e2);
+        world.remove_component::<A>(e2);
         assert!(!world.has_component::<A>(e2));
         assert!(world.has_component::<C>(e2));
         assert!(world.has_component::<Entity>(e2));
@@ -262,7 +262,7 @@ mod tests {
         assert!(world.has_component::<A>(e4));
         assert!(world.has_component::<C>(e4));
 
-        world.remove_component::<C>(e2).unwrap();
+        world.remove_component::<C>(e2);
     }
 
     #[test]
