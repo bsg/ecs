@@ -1,9 +1,5 @@
 use core::panic;
-use std::{
-    collections::{BTreeSet, HashMap},
-    mem,
-    ptr::null_mut,
-};
+use std::{collections::BTreeSet, mem, ptr::null_mut};
 
 use crate::component::{Component, ComponentId, ComponentInfo};
 
@@ -91,7 +87,7 @@ impl ComponentList {
 }
 
 pub(crate) struct Store {
-    data: HashMap<ComponentId, ComponentList>,
+    data: Vec<Option<ComponentList>>,
     end_index: usize,
     free_indices: BTreeSet<usize>,
 }
@@ -99,7 +95,7 @@ pub(crate) struct Store {
 impl Store {
     pub fn new() -> Self {
         Store {
-            data: HashMap::new(),
+            data: (0..128).map(|_| None).collect(), // TODO resize on demand
             end_index: 0,
             free_indices: BTreeSet::new(),
         }
@@ -124,35 +120,52 @@ impl Store {
     }
 
     #[allow(clippy::mut_from_ref)]
-    pub unsafe fn read_mut<T: Component + 'static>(&self, entity_index: usize) -> &mut T {
+    pub unsafe fn read_mut<T: Component + 'static>(&mut self, entity_index: usize) -> &mut T {
         self.data
-            .get(&T::info_static().id())
+            .get_mut(T::info_static().id().0 as usize)
+            .unwrap()
+            .as_mut()
             .unwrap()
             .read_mut::<T>(entity_index)
     }
 
     pub unsafe fn try_read<T: Component + 'static>(&self, entity_index: usize) -> Option<&T> {
         self.data
-            .get(&T::info_static().id())
+            .get(T::info_static().id().0 as usize)
+            .unwrap()
+            .as_ref()
             .map(|list| list.read::<T>(entity_index))
     }
 
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn try_read_mut<T: Component + 'static>(
-        &self,
+        &mut self,
         entity_index: usize,
     ) -> Option<&mut T> {
         self.data
-            .get(&T::info_static().id())
+            .get_mut(T::info_static().id().0 as usize)
+            .unwrap()
+            .as_mut()
             .map(|list| list.read_mut::<T>(entity_index))
     }
 
     pub unsafe fn write<T: Component + 'static>(&mut self, entity_index: usize, val: T) {
+        if self
+            .data
+            .get(T::info_static().id().0 as usize)
+            .unwrap()
+            .is_none()
+        {
+            self.data
+                .get_mut(T::info_static().id().0 as usize)
+                .unwrap()
+                .replace(ComponentList::new(T::info_static().size()));
+        }
         self.data
-            .entry(T::info_static().id())
-            .or_insert_with(|| ComponentList::new(T::info_static().size()));
-        self.data
-            .get_mut(&T::info_static().id())
+            .get_mut(T::info_static().id().0 as usize)
+            .as_mut()
+            .unwrap()
+            .as_mut()
             .unwrap()
             .write(entity_index, val);
     }
@@ -163,21 +176,35 @@ impl Store {
         entity_index: usize,
         val: &dyn Component,
     ) {
+        if self
+            .data
+            .get(component_info.id().0 as usize)
+            .unwrap()
+            .is_none()
+        {
+            self.data
+                .get_mut(component_info.id().0 as usize)
+                .unwrap()
+                .replace(ComponentList::new(component_info.size()));
+        }
         self.data
-            .entry(component_info.id())
-            .or_insert_with(|| ComponentList::new(component_info.size()));
-        self.data
-            .get_mut(&component_info.id())
+            .get_mut(component_info.id().0 as usize)
+            .as_mut()
+            .unwrap()
+            .as_mut()
             .unwrap()
             .write_any(entity_index, val);
     }
 
     pub unsafe fn add_component_list_by_id(&mut self, id: ComponentId, size: usize) {
-        self.data.insert(id, ComponentList::new(size));
+        self.data
+            .get_mut(id.0 as usize)
+            .unwrap()
+            .replace(ComponentList::new(size));
     }
 
     pub unsafe fn get_component_list_by_id(&self, id: ComponentId) -> Option<&ComponentList> {
-        self.data.get(&id)
+        self.data.get(id.0 as usize).unwrap().as_ref()
     }
 
     pub unsafe fn get_component_list<T: Component + 'static>(&self) -> Option<&ComponentList> {
@@ -188,11 +215,14 @@ impl Store {
         &mut self,
         id: ComponentId,
     ) -> Option<&mut ComponentList> {
-        self.data.get_mut(&id)
+        self.data.get_mut(id.0 as usize).unwrap().as_mut()
     }
 
     pub fn has_component<T: Component + 'static>(&self) -> bool {
-        self.data.contains_key(&T::info_static().id())
+        self.data
+            .get(T::info_static().id().0 as usize)
+            .unwrap()
+            .is_some()
     }
 }
 
