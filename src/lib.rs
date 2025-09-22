@@ -1,6 +1,6 @@
 pub use ecs_codegen::component;
 
-mod archetype;
+pub mod archetype;
 pub mod component;
 mod store;
 mod test;
@@ -509,25 +509,23 @@ impl<C: Ctx> World<C> {
         entity
     }
 
-    /// # Safety
-    /// This is marked 'unsafe' because it's likely that component specific teardown
-    /// will need to be implemented by the user
-    pub unsafe fn despawn(&self, entity: Entity) {
+    pub fn despawn(&self, entity: Entity) {
         if entity == Entity(0) {
             return;
         }
 
         if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
-            let store = self.inner().stores.get_mut(archetype).unwrap_unchecked();
+            let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
 
-            *store.read_mut::<Entity>(*index) = Entity(0);
+            *unsafe { store.read_mut::<Entity>(*index) } = Entity(0);
             store.free_index(*index);
 
-            *self
-                .inner()
-                .entities
-                .get_mut(*entity as usize)
-                .unwrap_unchecked() = None;
+            *unsafe {
+                self.inner()
+                    .entities
+                    .get_mut(*entity as usize)
+                    .unwrap_unchecked()
+            } = None;
 
             self.inner().free_entities.insert(entity);
         }

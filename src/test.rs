@@ -186,7 +186,7 @@ mod tests {
         let e = world.spawn(&[&A(3)]);
         world.spawn(&[&A(4)]);
 
-        unsafe { world.despawn(e) };
+        world.despawn(e);
 
         let mut sum = 0;
         world.run(|a: &A| {
@@ -206,7 +206,7 @@ mod tests {
         world.spawn(&[&A(4)]);
         world.spawn(&[&A(5)]);
 
-        unsafe { world.despawn(Entity(3)) };
+        world.despawn(Entity(3));
         assert_eq!(world.spawn(&[&A(3)]), Entity(3));
         assert_eq!(world.spawn(&[&A(6)]), Entity(6));
     }
@@ -276,7 +276,7 @@ mod tests {
         world.spawn(&[&A(3)]);
         world.spawn(&[&A(4)]);
 
-        unsafe { world.despawn(ent) };
+        world.despawn(ent);
 
         let archetype = ArchetypeBuilder::new().set::<A>().build();
         let mut acc = 0;
