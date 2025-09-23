@@ -858,8 +858,7 @@ impl<C: Ctx> World<C> {
         }
     }
 
-    // TODO rename
-    pub fn num_entities_upper_bound(&self) -> u32 {
+    pub fn num_entities_max(&self) -> u32 {
         self.inner().entities.len() as u32
     }
 }
