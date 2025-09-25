@@ -509,6 +509,39 @@ impl<C: Ctx> World<C> {
         entity
     }
 
+    // TODO ton of code shared again...
+    pub fn insert_from_slice_of_boxes(
+        &self,
+        entity: Entity,
+        bundle: &[Box<dyn Component>],
+    ) -> Entity {
+        let mut archetype = Archetype::new();
+
+        for item in bundle {
+            archetype.set(item.info());
+        }
+
+        archetype.set(Entity::info_static());
+
+        self.inner()
+            .stores
+            .entry(archetype)
+            .or_insert_with(Store::new);
+
+        let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
+        let index = store.reserve_index();
+        unsafe { store.write::<Entity>(index, entity) };
+        for item in bundle {
+            unsafe { store.write_any(item.info(), index, &**item) };
+        }
+        match self.inner().entities.get_mut(*entity as usize) {
+            Some(p) => *p = Some((archetype, index)),
+            None => self.inner().entities.push(Some((archetype, index))),
+        }
+
+        entity
+    }
+
     pub fn despawn(&self, entity: Entity) {
         if entity == Entity(0) {
             return;
