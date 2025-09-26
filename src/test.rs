@@ -11,7 +11,7 @@ mod tests {
     struct B(bool);
 
     #[component]
-    struct C<'a>(Option<&'a str>);
+    struct C(Option<&'static str>);
 
     #[component]
     struct Z {}
@@ -23,7 +23,7 @@ mod tests {
     fn get_component() {
         let world: World<Ctx> = World::new();
 
-        let entity_ref = world.spawn(&[&A(42u32), &B(false), &C(Some("a"))]);
+        let entity_ref = world.spawn((A(42u32), B(false), C(Some("a"))));
         assert_eq!(entity_ref.0, 1);
 
         let (_, index) = (*world.inner().entities.get(1).unwrap()).unwrap();
@@ -52,7 +52,7 @@ mod tests {
     fn get_nonexisting_component() {
         let world: World<Ctx> = World::new();
 
-        let e = world.spawn(&[&A(42u32)]);
+        let e = world.spawn(A(42u32));
         assert!(world.component::<B>(e).is_none());
         assert!(world.component_mut::<B>(e).is_none());
     }
@@ -61,9 +61,9 @@ mod tests {
     fn query() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&A(1u32), &C(Some("1"))]);
-        world.spawn(&[&A(2u32), &C(Some("2")), &B(true)]);
-        world.spawn(&[&A(10u32), &C(Some("10"))]);
+        world.spawn((A(1u32), C(Some("1"))));
+        world.spawn((A(2u32), C(Some("2")), B(true)));
+        world.spawn((A(10u32), C(Some("10"))));
 
         let mut count = 0;
         world.run(|a: &mut A, c: &C| {
@@ -82,10 +82,10 @@ mod tests {
     fn query_with_optional() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&B(true), &A(1)]);
-        world.spawn(&[&B(true)]);
-        world.spawn(&[&B(true), &A(5)]);
-        world.spawn(&[&B(true)]);
+        world.spawn((B(true), A(1)));
+        world.spawn(B(true));
+        world.spawn((B(true), A(5)));
+        world.spawn(B(true));
 
         world.run(|_: &B, a: Option<&mut A>| {
             if let Some(a) = a {
@@ -106,10 +106,10 @@ mod tests {
     fn query_with_entity() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&B(true), &A(1)]);
-        world.spawn(&[&B(true)]);
-        world.spawn(&[&B(true), &A(5)]);
-        world.spawn(&[&B(true)]);
+        world.spawn((B(true), A(1)));
+        world.spawn(B(true));
+        world.spawn((B(true), A(5)));
+        world.spawn(B(true));
 
         let mut sum = 0;
         world.run(|entity: &Entity, _: &B| {
@@ -123,12 +123,12 @@ mod tests {
     fn spawn_inside_system() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&C("1".into())]);
-        world.spawn(&[&C("2".into())]);
-        world.spawn(&[&C("3".into())]);
+        world.spawn(C("1".into()));
+        world.spawn(C("2".into()));
+        world.spawn(C("3".into()));
 
         world.run(|c: &C| {
-            world.spawn(&[&A(str::parse::<u32>(c.0.unwrap()).unwrap())]);
+            world.spawn(A(str::parse::<u32>(c.0.unwrap()).unwrap()));
         });
 
         let mut sum = 0;
@@ -143,12 +143,12 @@ mod tests {
     fn spawn_inside_system_subset() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&A(1), &C("1".into())]);
-        world.spawn(&[&A(2), &C("2".into())]);
-        world.spawn(&[&A(3), &C("3".into())]);
+        world.spawn((A(1), C("1".into())));
+        world.spawn((A(2), C("2".into())));
+        world.spawn((A(3), C("3".into())));
 
         world.run(|c: &C| {
-            world.spawn(&[&A(str::parse::<u32>(c.0.unwrap()).unwrap() * 10)]);
+            world.spawn(A(str::parse::<u32>(c.0.unwrap()).unwrap() * 10));
         });
 
         let mut sum = 0;
@@ -163,10 +163,10 @@ mod tests {
     fn spawn_inside_system_same_archetype() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&A(1)]);
+        world.spawn(A(1));
 
         world.run(|_: &A| {
-            world.spawn(&[&A(2)]);
+            world.spawn(A(2));
         });
 
         let mut sum = 0;
@@ -181,10 +181,10 @@ mod tests {
     fn despawn() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&A(1)]);
-        world.spawn(&[&A(2)]);
-        let e = world.spawn(&[&A(3)]);
-        world.spawn(&[&A(4)]);
+        world.spawn(A(1));
+        world.spawn(A(2));
+        let e = world.spawn(A(3));
+        world.spawn(A(4));
 
         world.despawn(e);
 
@@ -200,25 +200,25 @@ mod tests {
     fn reuse_entity() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&A(1)]);
-        world.spawn(&[&A(2)]);
-        world.spawn(&[&A(3)]);
-        world.spawn(&[&A(4)]);
-        world.spawn(&[&A(5)]);
+        world.spawn(A(1));
+        world.spawn(A(2));
+        world.spawn(A(3));
+        world.spawn(A(4));
+        world.spawn(A(5));
 
         world.despawn(Entity(3));
-        assert_eq!(world.spawn(&[&A(3)]), Entity(3));
-        assert_eq!(world.spawn(&[&A(6)]), Entity(6));
+        assert_eq!(world.spawn(A(3)), Entity(3));
+        assert_eq!(world.spawn(A(6)), Entity(6));
     }
 
     #[test]
     fn with_without() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&A(1), &B(false)]);
-        world.spawn(&[&A(2)]);
-        world.spawn(&[&A(3), &B(false)]);
-        world.spawn(&[&A(4)]);
+        world.spawn((A(1), B(false)));
+        world.spawn(A(2));
+        world.spawn((A(3), B(false)));
+        world.spawn(A(4));
 
         let mut sum = 0;
         world.run(|a: &A, _: Without<B>| {
@@ -237,10 +237,10 @@ mod tests {
     fn add_remove_component() {
         let world: World<Ctx> = World::new();
 
-        let e1 = world.spawn(&[&A(1)]);
-        let e2 = world.spawn(&[&A(2)]);
-        let e3 = world.spawn(&[&A(3)]);
-        let e4 = world.spawn(&[&A(4), &C(Some("bar"))]);
+        let e1 = world.spawn(A(1));
+        let e2 = world.spawn(A(2));
+        let e3 = world.spawn(A(3));
+        let e4 = world.spawn((A(4), C(Some("bar"))));
 
         world.add_component(e2, C(Some("foo")));
         world.add_component(e2, C(Some("foo")));
@@ -269,12 +269,12 @@ mod tests {
     fn for_each_with_archetype() {
         let world: World<Ctx> = World::new();
 
-        world.spawn(&[&A(1)]);
-        world.spawn(&[&A(2)]);
-        let ent = world.spawn(&[&A(1), &B(false)]);
-        world.spawn(&[&A(1), &B(false)]);
-        world.spawn(&[&A(3)]);
-        world.spawn(&[&A(4)]);
+        world.spawn(A(1));
+        world.spawn(A(2));
+        let ent = world.spawn((A(1), B(false)));
+        world.spawn((A(1), B(false)));
+        world.spawn(A(3));
+        world.spawn(A(4));
 
         world.despawn(ent);
 

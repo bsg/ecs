@@ -349,6 +349,99 @@ impl_system!(
 
 pub trait Ctx {}
 
+pub trait Bundle {
+    fn set_archetype(&self, archetype: &mut Archetype);
+    #[allow(private_interfaces)]
+    fn write_self_to_store(self, index: usize, store: &mut Store);
+}
+
+macro_rules! impl_bundle {
+    ($(($t:ident, $idx:tt)),+) => {
+        impl<$($t,)+> Bundle for ($($t,)+)
+        where
+            $($t: Component + 'static,)+
+        {
+            fn set_archetype(&self, archetype: &mut Archetype) {
+                $(archetype.set(self.$idx.info());)+
+            }
+
+            #[allow(private_interfaces)]
+            fn write_self_to_store(self, index: usize, store: &mut Store) {
+                unsafe {
+                    $(
+                        store.write_any(self.$idx.info(), index, &self.$idx);
+                    )+
+                };
+                mem::forget(self);
+            }
+        }
+    }
+}
+
+impl<T1: Component + 'static> Bundle for T1 {
+    fn set_archetype(&self, archetype: &mut Archetype) {
+        archetype.set(self.info());
+    }
+
+    #[allow(private_interfaces)]
+    fn write_self_to_store(self, index: usize, store: &mut Store) {
+        unsafe { store.write_any(self.info(), index, &self) };
+        mem::forget(self);
+    }
+}
+
+// XXX
+impl_bundle!((T1, 0), (T2, 1));
+impl_bundle!((T1, 0), (T2, 1), (T3, 2));
+impl_bundle!((T1, 0), (T2, 1), (T3, 2), (T4, 3));
+impl_bundle!((T1, 0), (T2, 1), (T3, 2), (T4, 3), (T5, 4));
+impl_bundle!((T1, 0), (T2, 1), (T3, 2), (T4, 3), (T5, 4), (T6, 5));
+impl_bundle!(
+    (T1, 0),
+    (T2, 1),
+    (T3, 2),
+    (T4, 3),
+    (T5, 4),
+    (T6, 5),
+    (T7, 6)
+);
+
+impl_bundle!(
+    (T1, 0),
+    (T2, 1),
+    (T3, 2),
+    (T4, 3),
+    (T5, 4),
+    (T6, 5),
+    (T7, 6),
+    (T8, 7)
+);
+
+impl_bundle!(
+    (T1, 0),
+    (T2, 1),
+    (T3, 2),
+    (T4, 3),
+    (T5, 4),
+    (T6, 5),
+    (T7, 6),
+    (T8, 7),
+    (T9, 8)
+);
+
+impl_bundle!(
+    (T1, 0),
+    (T2, 1),
+    (T3, 2),
+    (T4, 3),
+    (T5, 4),
+    (T6, 5),
+    (T7, 6),
+    (T8, 7),
+    (T9, 8),
+    (T10, 9)
+);
+
 enum Cmd {
     AddComponent((Entity, ComponentInfo, Box<dyn Component>)),
     RemoveComponent((Entity, ComponentInfo)),
@@ -407,7 +500,7 @@ impl<C: Ctx> World<C> {
         unsafe { &mut *self.inner }
     }
 
-    pub fn spawn(&self, bundle: &[&dyn Component]) -> Entity {
+    pub fn spawn<B: Bundle>(&self, bundle: B) -> Entity {
         let entity = self
             .inner()
             .free_entities
@@ -416,9 +509,7 @@ impl<C: Ctx> World<C> {
 
         let mut archetype = Archetype::new();
 
-        for item in bundle {
-            archetype.set(item.info());
-        }
+        bundle.set_archetype(&mut archetype);
 
         archetype.set(Entity::info_static());
 
@@ -430,9 +521,7 @@ impl<C: Ctx> World<C> {
         let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
         let index = store.reserve_index();
         unsafe { store.write::<Entity>(index, entity) };
-        for item in bundle {
-            unsafe { store.write_any(item.info(), index, *item) };
-        }
+        bundle.write_self_to_store(index, store);
         match self.inner().entities.get_mut(*entity as usize) {
             Some(p) => *p = Some((archetype, index)),
             None => self.inner().entities.push(Some((archetype, index))),
@@ -478,12 +567,10 @@ impl<C: Ctx> World<C> {
 
     // TODO tests
     // TODO this is almost identical to spawn(). dedup
-    pub fn insert(&self, entity: Entity, bundle: &[&dyn Component]) -> Entity {
+    pub fn insert<B: Bundle>(&self, entity: Entity, bundle: B) -> Entity {
         let mut archetype = Archetype::new();
 
-        for item in bundle {
-            archetype.set(item.info());
-        }
+        bundle.set_archetype(&mut archetype);
 
         archetype.set(Entity::info_static());
 
@@ -495,9 +582,7 @@ impl<C: Ctx> World<C> {
         let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
         let index = store.reserve_index();
         unsafe { store.write::<Entity>(index, entity) };
-        for item in bundle {
-            unsafe { store.write_any(item.info(), index, *item) };
-        }
+        bundle.write_self_to_store(index, store);
 
         if *entity as usize >= self.inner().entities.len() {
             self.inner().entities.resize(*entity as usize + 1, None);
@@ -650,6 +735,7 @@ impl<C: Ctx> World<C> {
                         .get_mut(&new_archetype)
                         .unwrap_unchecked()
                 };
+
                 for id in 0..128 {
                     unsafe {
                         if let Some(list) = store.get_component_list_by_id(ComponentId(id as u32)) {
@@ -745,6 +831,7 @@ impl<C: Ctx> World<C> {
                         .get_mut(&new_archetype)
                         .unwrap_unchecked()
                 };
+
                 for id in 0..128usize {
                     unsafe {
                         if let Some(list) = store.get_component_list_by_id(ComponentId(id as u32)) {
