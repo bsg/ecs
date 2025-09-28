@@ -6,7 +6,7 @@ mod store;
 mod test;
 
 use archetype::Archetype;
-use component::{ComponentId, ComponentInfo};
+use component::{ComponentId, Metadata};
 use serde::Deserialize;
 use serde::Serialize;
 use store::{ComponentList, Store};
@@ -29,17 +29,17 @@ impl ArchetypeBuilder {
     #[allow(clippy::new_without_default)]
     pub fn new() -> ArchetypeBuilder {
         let mut archetype = Archetype::new();
-        archetype.set(Entity::info_static());
+        archetype.set(Entity::metadata_static());
         ArchetypeBuilder(archetype)
     }
 
     pub fn set<T: Component>(mut self) -> ArchetypeBuilder {
-        self.0.set(T::info_static());
+        self.0.set(T::metadata_static());
         self
     }
 
-    pub fn set_from_info(&mut self, info: ComponentInfo) -> &mut ArchetypeBuilder {
-        self.0.set(info);
+    pub fn set_from_metadata(&mut self, metadata: Metadata) -> &mut ArchetypeBuilder {
+        self.0.set(metadata);
         self
     }
 
@@ -60,15 +60,15 @@ impl Deref for Entity {
 }
 
 impl Component for Entity {
-    fn info(&self) -> ComponentInfo {
-        ComponentInfo::new(ComponentId(0), mem::size_of::<Entity>(), "Entity")
+    fn metadata(&self) -> Metadata {
+        Metadata::new(ComponentId(0), mem::size_of::<Entity>(), "Entity")
     }
 
-    fn info_static() -> ComponentInfo
+    fn metadata_static() -> Metadata
     where
         Self: Sized,
     {
-        ComponentInfo::new(ComponentId(0), mem::size_of::<Entity>(), "Entity")
+        Metadata::new(ComponentId(0), mem::size_of::<Entity>(), "Entity")
     }
 }
 
@@ -84,7 +84,7 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a T, C> for &'a T {
     }
 
     fn match_archetype(archetype: &Archetype) -> bool {
-        archetype.contains(T::info_static())
+        archetype.contains(T::metadata_static())
     }
 }
 
@@ -95,7 +95,7 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a mut T, C> for &'a
     }
 
     fn match_archetype(archetype: &Archetype) -> bool {
-        archetype.contains(T::info_static())
+        archetype.contains(T::metadata_static())
     }
 }
 
@@ -136,7 +136,7 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, With<T>, C> for With<
     }
 
     fn match_archetype(archetype: &Archetype) -> bool {
-        archetype.contains(T::info_static())
+        archetype.contains(T::metadata_static())
     }
 }
 
@@ -153,7 +153,7 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Without<T>, C> for Wi
     }
 
     fn match_archetype(archetype: &Archetype) -> bool {
-        !archetype.contains(T::info_static())
+        !archetype.contains(T::metadata_static())
     }
 }
 
@@ -362,14 +362,14 @@ macro_rules! impl_bundle {
             $($t: Component + 'static,)+
         {
             fn set_archetype(&self, archetype: &mut Archetype) {
-                $(archetype.set(self.$idx.info());)+
+                $(archetype.set(self.$idx.metadata());)+
             }
 
             #[allow(private_interfaces)]
             fn write_self_to_store(self, index: usize, store: &mut Store) {
                 unsafe {
                     $(
-                        store.write_any(self.$idx.info(), index, &self.$idx);
+                        store.write_any(self.$idx.metadata(), index, &self.$idx);
                     )+
                 };
                 mem::forget(self);
@@ -380,12 +380,12 @@ macro_rules! impl_bundle {
 
 impl<T1: Component + 'static> Bundle for T1 {
     fn set_archetype(&self, archetype: &mut Archetype) {
-        archetype.set(self.info());
+        archetype.set(self.metadata());
     }
 
     #[allow(private_interfaces)]
     fn write_self_to_store(self, index: usize, store: &mut Store) {
-        unsafe { store.write_any(self.info(), index, &self) };
+        unsafe { store.write_any(self.metadata(), index, &self) };
         mem::forget(self);
     }
 }
@@ -442,9 +442,38 @@ impl_bundle!(
     (T10, 9)
 );
 
+impl_bundle!(
+    (T1, 0),
+    (T2, 1),
+    (T3, 2),
+    (T4, 3),
+    (T5, 4),
+    (T6, 5),
+    (T7, 6),
+    (T8, 7),
+    (T9, 8),
+    (T10, 9),
+    (T11, 10)
+);
+
+impl_bundle!(
+    (T1, 0),
+    (T2, 1),
+    (T3, 2),
+    (T4, 3),
+    (T5, 4),
+    (T6, 5),
+    (T7, 6),
+    (T8, 7),
+    (T9, 8),
+    (T10, 9),
+    (T11, 10),
+    (T12, 11)
+);
+
 enum Cmd {
-    AddComponent((Entity, ComponentInfo, Box<dyn Component>)),
-    RemoveComponent((Entity, ComponentInfo)),
+    AddComponent((Entity, Metadata, Box<dyn Component>)),
+    RemoveComponent((Entity, Metadata)),
 }
 
 struct WorldInner<C: Ctx> {
@@ -511,7 +540,7 @@ impl<C: Ctx> World<C> {
 
         bundle.set_archetype(&mut archetype);
 
-        archetype.set(Entity::info_static());
+        archetype.set(Entity::metadata_static());
 
         self.inner()
             .stores
@@ -541,10 +570,10 @@ impl<C: Ctx> World<C> {
         let mut archetype = Archetype::new();
 
         for item in bundle {
-            archetype.set(item.info());
+            archetype.set(item.metadata());
         }
 
-        archetype.set(Entity::info_static());
+        archetype.set(Entity::metadata_static());
 
         self.inner()
             .stores
@@ -555,7 +584,7 @@ impl<C: Ctx> World<C> {
         let index = store.reserve_index();
         unsafe { store.write::<Entity>(index, entity) };
         for item in bundle {
-            unsafe { store.write_any(item.info(), index, &**item) };
+            unsafe { store.write_any(item.metadata(), index, &**item) };
         }
         match self.inner().entities.get_mut(*entity as usize) {
             Some(p) => *p = Some((archetype, index)),
@@ -572,7 +601,7 @@ impl<C: Ctx> World<C> {
 
         bundle.set_archetype(&mut archetype);
 
-        archetype.set(Entity::info_static());
+        archetype.set(Entity::metadata_static());
 
         self.inner()
             .stores
@@ -603,10 +632,10 @@ impl<C: Ctx> World<C> {
         let mut archetype = Archetype::new();
 
         for item in bundle {
-            archetype.set(item.info());
+            archetype.set(item.metadata());
         }
 
-        archetype.set(Entity::info_static());
+        archetype.set(Entity::metadata_static());
 
         self.inner()
             .stores
@@ -617,7 +646,7 @@ impl<C: Ctx> World<C> {
         let index = store.reserve_index();
         unsafe { store.write::<Entity>(index, entity) };
         for item in bundle {
-            unsafe { store.write_any(item.info(), index, &**item) };
+            unsafe { store.write_any(item.metadata(), index, &**item) };
         }
         match self.inner().entities.get_mut(*entity as usize) {
             Some(p) => *p = Some((archetype, index)),
@@ -699,11 +728,11 @@ impl<C: Ctx> World<C> {
             .load(std::sync::atomic::Ordering::Relaxed)
             == 0
         {
-            let _ = self._add_component(entity, T::info_static(), &component);
+            let _ = self._add_component(entity, T::metadata_static(), &component);
         } else {
             self.inner().cmd_queue.push(Cmd::AddComponent((
                 entity,
-                T::info_static(),
+                T::metadata_static(),
                 Box::new(component),
             )));
         }
@@ -712,12 +741,12 @@ impl<C: Ctx> World<C> {
     fn _add_component(
         &self,
         entity: Entity,
-        component_info: ComponentInfo,
+        metadata: Metadata,
         component: &dyn Component,
     ) -> Result<(), ()> {
         if let Some(Some((archetype, index))) = self.inner().entities.get_mut(*entity as usize) {
             let mut new_archetype = *archetype;
-            new_archetype.set(component.info());
+            new_archetype.set(component.metadata());
 
             if *archetype == new_archetype {
                 return Result::Err(());
@@ -779,7 +808,7 @@ impl<C: Ctx> World<C> {
             unsafe { store.write::<Entity>(*index, Entity(0)) };
             store.free_index(*index);
 
-            unsafe { new_store.write_any(component_info, new_index, component) };
+            unsafe { new_store.write_any(metadata, new_index, component) };
 
             *archetype = new_archetype;
             *index = new_index;
@@ -797,18 +826,18 @@ impl<C: Ctx> World<C> {
             .load(std::sync::atomic::Ordering::Relaxed)
             == 0
         {
-            let _ = self._remove_component(entity, T::info_static());
+            let _ = self._remove_component(entity, T::metadata_static());
         } else {
             self.inner()
                 .cmd_queue
-                .push(Cmd::RemoveComponent((entity, T::info_static())));
+                .push(Cmd::RemoveComponent((entity, T::metadata_static())));
         }
     }
 
-    fn _remove_component(&self, entity: Entity, component_info: ComponentInfo) -> Result<(), ()> {
+    fn _remove_component(&self, entity: Entity, metadata: Metadata) -> Result<(), ()> {
         if let Some(Some((archetype, index))) = self.inner().entities.get_mut(*entity as usize) {
             let mut new_archetype = *archetype;
-            new_archetype.unset(component_info);
+            new_archetype.unset(metadata);
 
             if *archetype == new_archetype {
                 return Result::Err(());
@@ -935,11 +964,11 @@ impl<C: Ctx> World<C> {
         if num_running_systems == 0 {
             for cmd in &self.inner().cmd_queue {
                 match cmd {
-                    Cmd::AddComponent((ent, info, component)) => {
-                        let _ = self._add_component(*ent, *info, component.as_ref());
+                    Cmd::AddComponent((ent, metadata, component)) => {
+                        let _ = self._add_component(*ent, *metadata, component.as_ref());
                     }
-                    Cmd::RemoveComponent((ent, info)) => {
-                        let _ = self._remove_component(*ent, *info);
+                    Cmd::RemoveComponent((ent, metadata)) => {
+                        let _ = self._remove_component(*ent, *metadata);
                     }
                 };
             }

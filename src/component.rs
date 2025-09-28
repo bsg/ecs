@@ -12,27 +12,23 @@ impl Deref for ComponentId {
 }
 
 pub trait Component {
-    fn info(&self) -> ComponentInfo;
-    fn info_static() -> ComponentInfo
+    fn metadata(&self) -> Metadata;
+    fn metadata_static() -> Metadata
     where
         Self: Sized;
 }
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ComponentInfo {
+pub struct Metadata {
     id: ComponentId,
-    size: u32,
+    size: usize,
     name: &'static str,
 }
 
-impl ComponentInfo {
+impl Metadata {
     pub fn new(id: ComponentId, size: usize, name: &'static str) -> Self {
-        ComponentInfo {
-            id,
-            size: u32::try_from(size).expect("Component size too large"),
-            name,
-        }
+        Metadata { id, size, name }
     }
 
     pub fn id(&self) -> ComponentId {
@@ -40,7 +36,7 @@ impl ComponentInfo {
     }
 
     pub fn size(&self) -> usize {
-        self.size as usize
+        self.size
     }
 
     pub fn name(&self) -> &'static str {

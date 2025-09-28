@@ -1,7 +1,7 @@
 use core::panic;
 use std::{collections::BTreeSet, mem, ptr::null_mut};
 
-use crate::component::{Component, ComponentId, ComponentInfo};
+use crate::component::{Component, ComponentId, Metadata};
 
 pub(crate) struct ComponentList {
     data: *mut u8,
@@ -59,7 +59,7 @@ impl ComponentList {
         self.grow(idx);
         self.data
             .add(self.stride * idx)
-            .copy_from_nonoverlapping(mem::transmute_copy(&val), val.info().size());
+            .copy_from_nonoverlapping(mem::transmute_copy(&val), val.metadata().size());
     }
 
     #[inline(always)]
@@ -122,7 +122,7 @@ impl Store {
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn read_mut<T: Component + 'static>(&mut self, entity_index: usize) -> &mut T {
         self.data
-            .get_mut(T::info_static().id().0 as usize)
+            .get_mut(T::metadata_static().id().0 as usize)
             .unwrap()
             .as_mut()
             .unwrap()
@@ -131,7 +131,7 @@ impl Store {
 
     pub unsafe fn try_read<T: Component + 'static>(&self, entity_index: usize) -> Option<&T> {
         self.data
-            .get(T::info_static().id().0 as usize)
+            .get(T::metadata_static().id().0 as usize)
             .unwrap()
             .as_ref()
             .map(|list| list.read::<T>(entity_index))
@@ -143,7 +143,7 @@ impl Store {
         entity_index: usize,
     ) -> Option<&mut T> {
         self.data
-            .get_mut(T::info_static().id().0 as usize)
+            .get_mut(T::metadata_static().id().0 as usize)
             .unwrap()
             .as_mut()
             .map(|list| list.read_mut::<T>(entity_index))
@@ -152,17 +152,17 @@ impl Store {
     pub unsafe fn write<T: Component + 'static>(&mut self, entity_index: usize, val: T) {
         if self
             .data
-            .get(T::info_static().id().0 as usize)
+            .get(T::metadata_static().id().0 as usize)
             .unwrap()
             .is_none()
         {
             self.data
-                .get_mut(T::info_static().id().0 as usize)
+                .get_mut(T::metadata_static().id().0 as usize)
                 .unwrap()
-                .replace(ComponentList::new(T::info_static().size()));
+                .replace(ComponentList::new(T::metadata_static().size()));
         }
         self.data
-            .get_mut(T::info_static().id().0 as usize)
+            .get_mut(T::metadata_static().id().0 as usize)
             .as_mut()
             .unwrap()
             .as_mut()
@@ -172,23 +172,18 @@ impl Store {
 
     pub unsafe fn write_any(
         &mut self,
-        component_info: ComponentInfo,
+        metadata: Metadata,
         entity_index: usize,
         val: &dyn Component,
     ) {
-        if self
-            .data
-            .get(component_info.id().0 as usize)
-            .unwrap()
-            .is_none()
-        {
+        if self.data.get(metadata.id().0 as usize).unwrap().is_none() {
             self.data
-                .get_mut(component_info.id().0 as usize)
+                .get_mut(metadata.id().0 as usize)
                 .unwrap()
-                .replace(ComponentList::new(component_info.size()));
+                .replace(ComponentList::new(metadata.size()));
         }
         self.data
-            .get_mut(component_info.id().0 as usize)
+            .get_mut(metadata.id().0 as usize)
             .as_mut()
             .unwrap()
             .as_mut()
@@ -208,7 +203,7 @@ impl Store {
     }
 
     pub unsafe fn get_component_list<T: Component + 'static>(&self) -> Option<&ComponentList> {
-        self.get_component_list_by_id(T::info_static().id())
+        self.get_component_list_by_id(T::metadata_static().id())
     }
 
     pub unsafe fn get_component_list_by_id_mut(
@@ -220,7 +215,7 @@ impl Store {
 
     pub fn has_component<T: Component + 'static>(&self) -> bool {
         self.data
-            .get(T::info_static().id().0 as usize)
+            .get(T::metadata_static().id().0 as usize)
             .unwrap()
             .is_some()
     }
@@ -239,7 +234,7 @@ mod tests {
 
     #[test]
     fn list_write_read() {
-        let mut list = ComponentList::new(A::info_static().size());
+        let mut list = ComponentList::new(A::metadata_static().size());
         unsafe {
             list.write(0, A(0));
             list.write(1, A(1));

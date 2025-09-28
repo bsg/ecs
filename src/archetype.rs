@@ -1,4 +1,4 @@
-use crate::component::ComponentInfo;
+use crate::component::Metadata;
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
 pub struct Archetype {
@@ -21,8 +21,8 @@ impl Archetype {
     }
 
     #[inline(always)]
-    pub(crate) fn set(&mut self, info: ComponentInfo) {
-        self.set_id(*info.id() as usize);
+    pub(crate) fn set(&mut self, metadata: Metadata) {
+        self.set_id(*metadata.id() as usize);
     }
 
     #[inline(always)]
@@ -35,8 +35,8 @@ impl Archetype {
     }
 
     #[inline(always)]
-    pub(crate) fn unset(&mut self, info: ComponentInfo) {
-        self.unset_id(*info.id() as usize);
+    pub(crate) fn unset(&mut self, metadata: Metadata) {
+        self.unset_id(*metadata.id() as usize);
     }
 
     #[inline(always)]
@@ -45,8 +45,8 @@ impl Archetype {
     }
 
     #[inline(always)]
-    pub fn contains(&self, info: ComponentInfo) -> bool {
-        self.contains_id(*info.id() as usize)
+    pub fn contains(&self, metadata: Metadata) -> bool {
+        self.contains_id(*metadata.id() as usize)
     }
 
     pub fn subset_of(&self, other: Archetype) -> bool {

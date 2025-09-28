@@ -32,12 +32,12 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     out.extend(TokenStream::from(
         quote! {
             impl #generics ecs::component::Component for #ident #generics {
-                fn info(&self) -> ecs::component::ComponentInfo {
-                    ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), #ident_str)
+                fn metadata(&self) -> ecs::component::Metadata{
+                    ecs::component::Metadata::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), #ident_str)
                 }
 
-                fn info_static() -> ecs::component::ComponentInfo {
-                    ecs::component::ComponentInfo::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), #ident_str)
+                fn metadata_static() -> ecs::component::Metadata {
+                    ecs::component::Metadata::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), #ident_str)
                 }
             }
         }.into_token_stream()
