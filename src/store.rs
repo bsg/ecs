@@ -1,5 +1,9 @@
 use core::panic;
-use std::{collections::BTreeSet, mem, ptr::null_mut};
+use std::{
+    collections::BTreeSet,
+    mem,
+    ptr::{drop_in_place, null_mut},
+};
 
 use crate::component::{Component, ComponentId, Metadata};
 
@@ -60,6 +64,11 @@ impl ComponentList {
         self.data
             .add(self.stride * idx)
             .copy_from_nonoverlapping(mem::transmute_copy(&val), val.metadata().size());
+    }
+
+    #[inline(always)]
+    pub unsafe fn destroy<T: Component + 'static>(&self, idx: usize) {
+        drop_in_place::<T>(self.data.add(self.stride * idx).cast());
     }
 
     #[inline(always)]
@@ -189,6 +198,17 @@ impl Store {
             .as_mut()
             .unwrap()
             .write_any(entity_index, val);
+    }
+
+    pub unsafe fn destroy<T: Component + 'static>(&self, entity_index: usize) {
+        if let Some(list) = self
+            .data
+            .get(T::metadata_static().id().0 as usize)
+            .unwrap()
+            .as_ref()
+        {
+            list.destroy::<T>(entity_index)
+        }
     }
 
     pub unsafe fn add_component_list_by_id(&mut self, id: ComponentId, size: usize) {

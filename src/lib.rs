@@ -913,6 +913,18 @@ impl<C: Ctx> World<C> {
         Result::Err(())
     }
 
+    pub fn destroy_component<T: Component + 'static>(&self, entity: Entity) {
+        unsafe {
+            if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
+                self.inner()
+                    .stores
+                    .get_mut(archetype)
+                    .unwrap_unchecked()
+                    .destroy::<T>(*index)
+            }
+        }
+    }
+
     #[allow(clippy::mut_from_ref)]
     pub fn ctx(&self) -> &mut C {
         unsafe { (&mut *self.inner).ctx.assume_init_mut() }
