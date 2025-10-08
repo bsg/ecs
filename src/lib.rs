@@ -2,14 +2,14 @@ pub use ecs_codegen::component;
 
 pub mod archetype;
 pub mod component;
-mod store;
+mod table;
 mod test;
 
 use archetype::Archetype;
 use component::{ComponentId, Metadata};
 use serde::Deserialize;
 use serde::Serialize;
-use store::{ComponentList, Store};
+use table::{Column, Table};
 
 use core::panic;
 use std::mem::MaybeUninit;
@@ -73,14 +73,14 @@ impl Component for Entity {
 }
 
 trait QueryParam<'a, T, A, C: Ctx> {
-    fn access(world: &'a World<C>, list: Option<&'a ComponentList>, index: usize) -> A;
+    fn access(world: &'a World<C>, col: Option<&'a Column>, index: usize) -> A;
     fn match_archetype(archetype: &Archetype) -> bool;
 }
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a T, C> for &'a T {
     #[inline(always)]
-    fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> &'a T {
-        unsafe { store.unwrap_unchecked().read::<T>(index) }
+    fn access(_: &World<C>, col: Option<&'a Column>, index: usize) -> &'a T {
+        unsafe { col.unwrap_unchecked().read::<T>(index) }
     }
 
     fn match_archetype(archetype: &Archetype) -> bool {
@@ -90,8 +90,8 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a T, C> for &'a T {
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a mut T, C> for &'a mut T {
     #[inline(always)]
-    fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> &'a mut T {
-        unsafe { store.unwrap_unchecked().read_mut::<T>(index) }
+    fn access(_: &World<C>, col: Option<&'a Column>, index: usize) -> &'a mut T {
+        unsafe { col.unwrap_unchecked().read_mut::<T>(index) }
     }
 
     fn match_archetype(archetype: &Archetype) -> bool {
@@ -101,8 +101,8 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a mut T, C> for &'a
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a T>, C> for Option<&'a T> {
     #[inline(always)]
-    fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> Option<&'a T> {
-        unsafe { store.map(|list| list.read::<T>(index)) }
+    fn access(_: &World<C>, col: Option<&'a Column>, index: usize) -> Option<&'a T> {
+        unsafe { col.map(|col| col.read::<T>(index)) }
     }
 
     fn match_archetype(_: &Archetype) -> bool {
@@ -114,8 +114,8 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a mut T>, C>
     for Option<&'a mut T>
 {
     #[inline(always)]
-    fn access(_: &World<C>, store: Option<&'a ComponentList>, index: usize) -> Option<&'a mut T> {
-        unsafe { store.map(|list| list.read_mut::<T>(index)) }
+    fn access(_: &World<C>, col: Option<&'a Column>, index: usize) -> Option<&'a mut T> {
+        unsafe { col.map(|col| col.read_mut::<T>(index)) }
     }
 
     fn match_archetype(_: &Archetype) -> bool {
@@ -129,7 +129,7 @@ pub struct With<T: Component> {
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, With<T>, C> for With<T> {
     #[inline(always)]
-    fn access(_: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> With<T> {
+    fn access(_: &'a World<C>, _: Option<&'a Column>, _: usize) -> With<T> {
         With {
             marker: PhantomData,
         }
@@ -146,7 +146,7 @@ pub struct Without<T: Component> {
 
 impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Without<T>, C> for Without<T> {
     #[inline(always)]
-    fn access(_: &'a World<C>, _: Option<&'a ComponentList>, _: usize) -> Without<T> {
+    fn access(_: &'a World<C>, _: Option<&'a Column>, _: usize) -> Without<T> {
         Without {
             marker: PhantomData,
         }
@@ -162,7 +162,7 @@ pub trait System<'a, Params, C: Ctx> {
 }
 
 macro_rules! impl_system {
-    ($(($param:ident, $t:ident, $list:ident)),+) => {
+    ($(($param:ident, $t:ident, $col:ident)),+) => {
         impl<'a, $($param,)+ $($t,)+ F, C: Ctx> System<'a, ($($param,)+ $($t,)+), C> for F
         where
             $($t: Component + 'static,)+
@@ -171,15 +171,15 @@ macro_rules! impl_system {
         {
             fn run(&mut self, world: &'a World<C>) {
                 unsafe {
-                    for (archetype, store) in world.inner().stores.iter_mut() {
+                    for (archetype, table) in world.inner().tables.iter_mut() {
                         if $($param::match_archetype(archetype)) &&+ && true {
-                            let len = store.len();
-                            let entities = store.get_component_list::<Entity>().unwrap_unchecked();
-                            $(let $list = store.get_component_list::<$t>();)+
+                            let len = table.len();
+                            let entities = table.get_column::<Entity>().unwrap_unchecked();
+                            $(let $col= table.get_column::<$t>();)+
                             for item_idx in 0..len {
                                 if entities.read::<Entity>(item_idx).0 != 0 {
                                     self(
-                                        $($param::access(world, $list, item_idx),)+
+                                        $($param::access(world, $col, item_idx),)+
                                     );
                                 }
                             }
@@ -352,7 +352,7 @@ pub trait Ctx {}
 pub trait Bundle {
     fn set_archetype(&self, archetype: &mut Archetype);
     #[allow(private_interfaces)]
-    fn write_self_to_store(self, index: usize, store: &mut Store);
+    fn write_self_to_table(self, index: usize, table: &mut Table);
 }
 
 macro_rules! impl_bundle {
@@ -366,10 +366,10 @@ macro_rules! impl_bundle {
             }
 
             #[allow(private_interfaces)]
-            fn write_self_to_store(self, index: usize, store: &mut Store) {
+            fn write_self_to_table(self, index: usize, table: &mut Table) {
                 unsafe {
                     $(
-                        store.write_any(self.$idx.metadata(), index, &self.$idx);
+                        table.write_any(self.$idx.metadata(), index, &self.$idx);
                     )+
                 };
                 mem::forget(self);
@@ -384,8 +384,8 @@ impl<T1: Component + 'static> Bundle for T1 {
     }
 
     #[allow(private_interfaces)]
-    fn write_self_to_store(self, index: usize, store: &mut Store) {
-        unsafe { store.write_any(self.metadata(), index, &self) };
+    fn write_self_to_table(self, index: usize, table: &mut Table) {
+        unsafe { table.write_any(self.metadata(), index, &self) };
         mem::forget(self);
     }
 }
@@ -478,7 +478,7 @@ enum Cmd {
 
 struct WorldInner<C: Ctx> {
     entities: Vec<Option<(Archetype, usize)>>,
-    stores: HashMap<Archetype, Store>,
+    tables: HashMap<Archetype, Table>,
     free_entities: BTreeSet<Entity>,
     ctx: MaybeUninit<C>, // TODO drop
     cmd_queue: Vec<Cmd>,
@@ -499,7 +499,7 @@ impl<C: Ctx> World<C> {
             inner: Box::into_raw(Box::new(WorldInner {
                 // Entity(0) is used to mark deleted columns
                 entities: vec![None],
-                stores: HashMap::new(),
+                tables: HashMap::new(),
                 free_entities: BTreeSet::new(),
                 ctx: MaybeUninit::<C>::uninit(),
                 cmd_queue: Vec::default(),
@@ -543,14 +543,14 @@ impl<C: Ctx> World<C> {
         archetype.set(Entity::metadata_static());
 
         self.inner()
-            .stores
+            .tables
             .entry(archetype)
-            .or_insert_with(Store::new);
+            .or_insert_with(Table::new);
 
-        let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
-        let index = store.reserve_index();
-        unsafe { store.write::<Entity>(index, entity) };
-        bundle.write_self_to_store(index, store);
+        let table = unsafe { self.inner().tables.get_mut(&archetype).unwrap_unchecked() };
+        let index = table.reserve_index();
+        unsafe { table.write::<Entity>(index, entity) };
+        bundle.write_self_to_table(index, table);
         match self.inner().entities.get_mut(*entity as usize) {
             Some(p) => *p = Some((archetype, index)),
             None => self.inner().entities.push(Some((archetype, index))),
@@ -576,15 +576,15 @@ impl<C: Ctx> World<C> {
         archetype.set(Entity::metadata_static());
 
         self.inner()
-            .stores
+            .tables
             .entry(archetype)
-            .or_insert_with(Store::new);
+            .or_insert_with(Table::new);
 
-        let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
-        let index = store.reserve_index();
-        unsafe { store.write::<Entity>(index, entity) };
+        let table = unsafe { self.inner().tables.get_mut(&archetype).unwrap_unchecked() };
+        let index = table.reserve_index();
+        unsafe { table.write::<Entity>(index, entity) };
         for item in bundle {
-            unsafe { store.write_any(item.metadata(), index, &**item) };
+            unsafe { table.write_any(item.metadata(), index, &**item) };
         }
         match self.inner().entities.get_mut(*entity as usize) {
             Some(p) => *p = Some((archetype, index)),
@@ -604,14 +604,14 @@ impl<C: Ctx> World<C> {
         archetype.set(Entity::metadata_static());
 
         self.inner()
-            .stores
+            .tables
             .entry(archetype)
-            .or_insert_with(Store::new);
+            .or_insert_with(Table::new);
 
-        let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
-        let index = store.reserve_index();
-        unsafe { store.write::<Entity>(index, entity) };
-        bundle.write_self_to_store(index, store);
+        let table = unsafe { self.inner().tables.get_mut(&archetype).unwrap_unchecked() };
+        let index = table.reserve_index();
+        unsafe { table.write::<Entity>(index, entity) };
+        bundle.write_self_to_table(index, table);
 
         if *entity as usize >= self.inner().entities.len() {
             self.inner().entities.resize(*entity as usize + 1, None);
@@ -638,15 +638,15 @@ impl<C: Ctx> World<C> {
         archetype.set(Entity::metadata_static());
 
         self.inner()
-            .stores
+            .tables
             .entry(archetype)
-            .or_insert_with(Store::new);
+            .or_insert_with(Table::new);
 
-        let store = unsafe { self.inner().stores.get_mut(&archetype).unwrap_unchecked() };
-        let index = store.reserve_index();
-        unsafe { store.write::<Entity>(index, entity) };
+        let table = unsafe { self.inner().tables.get_mut(&archetype).unwrap_unchecked() };
+        let index = table.reserve_index();
+        unsafe { table.write::<Entity>(index, entity) };
         for item in bundle {
-            unsafe { store.write_any(item.metadata(), index, &**item) };
+            unsafe { table.write_any(item.metadata(), index, &**item) };
         }
         match self.inner().entities.get_mut(*entity as usize) {
             Some(p) => *p = Some((archetype, index)),
@@ -662,10 +662,10 @@ impl<C: Ctx> World<C> {
         }
 
         if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
-            let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
+            let table = unsafe { self.inner().tables.get_mut(archetype).unwrap_unchecked() };
 
-            *unsafe { store.read_mut::<Entity>(*index) } = Entity(0);
-            store.free_index(*index);
+            *unsafe { table.read_mut::<Entity>(*index) } = Entity(0);
+            table.free_index(*index);
 
             *unsafe {
                 self.inner()
@@ -682,7 +682,7 @@ impl<C: Ctx> World<C> {
         if let Some(Some((archetype, _))) = self.inner().entities.get(*entity as usize) {
             unsafe {
                 self.inner()
-                    .stores
+                    .tables
                     .get(archetype)
                     .unwrap_unchecked()
                     .has_component::<T>()
@@ -696,7 +696,7 @@ impl<C: Ctx> World<C> {
         unsafe {
             if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
                 self.inner()
-                    .stores
+                    .tables
                     .get(archetype)
                     .unwrap_unchecked()
                     .try_read::<T>(*index)
@@ -711,7 +711,7 @@ impl<C: Ctx> World<C> {
         unsafe {
             if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
                 self.inner()
-                    .stores
+                    .tables
                     .get_mut(archetype)
                     .unwrap_unchecked()
                     .try_read_mut::<T>(*index)
@@ -753,25 +753,25 @@ impl<C: Ctx> World<C> {
             }
 
             if let std::collections::hash_map::Entry::Vacant(e) =
-                self.inner().stores.entry(new_archetype)
+                self.inner().tables.entry(new_archetype)
             {
-                e.insert(Store::new());
+                e.insert(Table::new());
 
-                let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
-                let new_store = unsafe {
+                let table = unsafe { self.inner().tables.get_mut(archetype).unwrap_unchecked() };
+                let new_table = unsafe {
                     self.inner()
-                        .stores
+                        .tables
                         .get_mut(&new_archetype)
                         .unwrap_unchecked()
                 };
 
                 for id in 0..128 {
                     unsafe {
-                        if let Some(list) = store.get_component_list_by_id(ComponentId(id as u32)) {
+                        if let Some(col) = table.get_column_by_id(ComponentId(id as u32)) {
                             if new_archetype.contains_id(id) {
-                                new_store.add_component_list_by_id(
+                                new_table.add_column_by_id(
                                     ComponentId(id as u32),
-                                    list.get_component_size(),
+                                    col.get_component_size(),
                                 )
                             }
                         }
@@ -779,24 +779,24 @@ impl<C: Ctx> World<C> {
                 }
             }
 
-            let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
-            let new_store = unsafe {
+            let table = unsafe { self.inner().tables.get_mut(archetype).unwrap_unchecked() };
+            let new_table = unsafe {
                 self.inner()
-                    .stores
+                    .tables
                     .get_mut(&new_archetype)
                     .unwrap_unchecked()
             };
-            let new_index = new_store.reserve_index();
+            let new_index = new_table.reserve_index();
 
             for id in 0..128 {
                 if archetype.contains_id(id) {
                     unsafe {
-                        ComponentList::copy_item_from_list(
-                            store
-                                .get_component_list_by_id_mut(ComponentId(id as u32))
+                        Column::copy_item_from_column(
+                            table
+                                .get_column_by_id_mut(ComponentId(id as u32))
                                 .unwrap_unchecked(),
-                            new_store
-                                .get_component_list_by_id_mut(ComponentId(id as u32))
+                            new_table
+                                .get_column_by_id_mut(ComponentId(id as u32))
                                 .unwrap_unchecked(),
                             *index,
                             new_index,
@@ -805,10 +805,10 @@ impl<C: Ctx> World<C> {
                 }
             }
 
-            unsafe { store.write::<Entity>(*index, Entity(0)) };
-            store.free_index(*index);
+            unsafe { table.write::<Entity>(*index, Entity(0)) };
+            table.free_index(*index);
 
-            unsafe { new_store.write_any(metadata, new_index, component) };
+            unsafe { new_table.write_any(metadata, new_index, component) };
 
             *archetype = new_archetype;
             *index = new_index;
@@ -843,31 +843,31 @@ impl<C: Ctx> World<C> {
                 return Result::Err(());
             }
 
-            if !self.inner().stores.contains_key(&new_archetype) {
+            if !self.inner().tables.contains_key(&new_archetype) {
                 if self
                     .inner()
-                    .stores
-                    .insert(new_archetype, Store::new())
+                    .tables
+                    .insert(new_archetype, Table::new())
                     .is_some()
                 {
                     panic!("")
                 }
 
-                let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
-                let new_store = unsafe {
+                let table = unsafe { self.inner().tables.get_mut(archetype).unwrap_unchecked() };
+                let new_table = unsafe {
                     self.inner()
-                        .stores
+                        .tables
                         .get_mut(&new_archetype)
                         .unwrap_unchecked()
                 };
 
                 for id in 0..128usize {
                     unsafe {
-                        if let Some(list) = store.get_component_list_by_id(ComponentId(id as u32)) {
+                        if let Some(col) = table.get_column_by_id(ComponentId(id as u32)) {
                             if new_archetype.contains_id(id) {
-                                new_store.add_component_list_by_id(
+                                new_table.add_column_by_id(
                                     ComponentId(id as u32),
-                                    list.get_component_size(),
+                                    col.get_component_size(),
                                 )
                             }
                         }
@@ -875,24 +875,24 @@ impl<C: Ctx> World<C> {
                 }
             }
 
-            let store = unsafe { self.inner().stores.get_mut(archetype).unwrap_unchecked() };
-            let new_store = unsafe {
+            let table = unsafe { self.inner().tables.get_mut(archetype).unwrap_unchecked() };
+            let new_table = unsafe {
                 self.inner()
-                    .stores
+                    .tables
                     .get_mut(&new_archetype)
                     .unwrap_unchecked()
             };
-            let new_index = new_store.reserve_index();
+            let new_index = new_table.reserve_index();
 
             for id in 0..128usize {
                 if new_archetype.contains_id(id) {
                     unsafe {
-                        ComponentList::copy_item_from_list(
-                            store
-                                .get_component_list_by_id_mut(ComponentId(id as u32))
+                        Column::copy_item_from_column(
+                            table
+                                .get_column_by_id_mut(ComponentId(id as u32))
                                 .unwrap_unchecked(),
-                            new_store
-                                .get_component_list_by_id_mut(ComponentId(id as u32))
+                            new_table
+                                .get_column_by_id_mut(ComponentId(id as u32))
                                 .unwrap_unchecked(),
                             *index,
                             new_index,
@@ -901,8 +901,8 @@ impl<C: Ctx> World<C> {
                 }
             }
 
-            unsafe { store.write::<Entity>(*index, Entity(0)) };
-            store.free_index(*index);
+            unsafe { table.write::<Entity>(*index, Entity(0)) };
+            table.free_index(*index);
 
             *archetype = new_archetype;
             *index = new_index;
@@ -917,7 +917,7 @@ impl<C: Ctx> World<C> {
         unsafe {
             if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
                 self.inner()
-                    .stores
+                    .tables
                     .get_mut(archetype)
                     .unwrap_unchecked()
                     .destroy::<T>(*index)
@@ -991,10 +991,10 @@ impl<C: Ctx> World<C> {
     /// This could return a deleted entity so do not unwrap on ::component<..>(entity)
     pub fn for_each_with_archetype(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
         unsafe {
-            for (store_archetype, store) in self.inner().stores.iter_mut() {
-                if archetype == *store_archetype {
-                    let len = store.len();
-                    let entities = store.get_component_list::<Entity>().unwrap_unchecked();
+            for (table_archetype, table) in self.inner().tables.iter_mut() {
+                if archetype == *table_archetype {
+                    let len = table.len();
+                    let entities = table.get_column::<Entity>().unwrap_unchecked();
                     for i in 0..len {
                         f(*entities.read(i))
                     }
@@ -1007,10 +1007,10 @@ impl<C: Ctx> World<C> {
     /// This could return a deleted entity so do not unwrap on ::component<..>(entity)
     pub fn for_each_with_archetype_subset(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
         unsafe {
-            for (store_archetype, store) in self.inner().stores.iter_mut() {
-                if archetype.subset_of(*store_archetype) {
-                    let len = store.len();
-                    let entities = store.get_component_list::<Entity>().unwrap_unchecked();
+            for (table_archetype, table) in self.inner().tables.iter_mut() {
+                if archetype.subset_of(*table_archetype) {
+                    let len = table.len();
+                    let entities = table.get_column::<Entity>().unwrap_unchecked();
                     for i in 0..len {
                         f(*entities.read(i))
                     }

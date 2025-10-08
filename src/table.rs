@@ -7,15 +7,15 @@ use std::{
 
 use crate::component::{Component, ComponentId, Metadata};
 
-pub(crate) struct ComponentList {
+pub(crate) struct Column {
     data: *mut u8,
     stride: usize,
     cap: usize,
 }
 
-impl ComponentList {
+impl Column {
     pub fn new(item_size: usize) -> Self {
-        ComponentList {
+        Column {
             data: null_mut(),
             stride: item_size,
             cap: 0,
@@ -72,9 +72,9 @@ impl ComponentList {
     }
 
     #[inline(always)]
-    pub unsafe fn copy_item_from_list(
-        src: &ComponentList,
-        dst: &mut ComponentList,
+    pub unsafe fn copy_item_from_column(
+        src: &Column,
+        dst: &mut Column,
         src_idx: usize,
         dst_idx: usize,
     ) {
@@ -95,16 +95,16 @@ impl ComponentList {
     }
 }
 
-pub(crate) struct Store {
-    data: Vec<Option<ComponentList>>,
+pub(crate) struct Table {
+    cols: Vec<Option<Column>>,
     end_index: usize,
     free_indices: BTreeSet<usize>,
 }
 
-impl Store {
+impl Table {
     pub fn new() -> Self {
-        Store {
-            data: (0..128).map(|_| None).collect(), // TODO resize on demand
+        Table {
+            cols: (0..128).map(|_| None).collect(), // TODO resize on demand
             end_index: 0,
             free_indices: BTreeSet::new(),
         }
@@ -130,7 +130,7 @@ impl Store {
 
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn read_mut<T: Component + 'static>(&mut self, entity_index: usize) -> &mut T {
-        self.data
+        self.cols
             .get_mut(T::metadata_static().id().0 as usize)
             .unwrap()
             .as_mut()
@@ -139,11 +139,11 @@ impl Store {
     }
 
     pub unsafe fn try_read<T: Component + 'static>(&self, entity_index: usize) -> Option<&T> {
-        self.data
+        self.cols
             .get(T::metadata_static().id().0 as usize)
             .unwrap()
             .as_ref()
-            .map(|list| list.read::<T>(entity_index))
+            .map(|col| col.read::<T>(entity_index))
     }
 
     #[allow(clippy::mut_from_ref)]
@@ -151,26 +151,26 @@ impl Store {
         &mut self,
         entity_index: usize,
     ) -> Option<&mut T> {
-        self.data
+        self.cols
             .get_mut(T::metadata_static().id().0 as usize)
             .unwrap()
             .as_mut()
-            .map(|list| list.read_mut::<T>(entity_index))
+            .map(|col| col.read_mut::<T>(entity_index))
     }
 
     pub unsafe fn write<T: Component + 'static>(&mut self, entity_index: usize, val: T) {
         if self
-            .data
+            .cols
             .get(T::metadata_static().id().0 as usize)
             .unwrap()
             .is_none()
         {
-            self.data
+            self.cols
                 .get_mut(T::metadata_static().id().0 as usize)
                 .unwrap()
-                .replace(ComponentList::new(T::metadata_static().size()));
+                .replace(Column::new(T::metadata_static().size()));
         }
-        self.data
+        self.cols
             .get_mut(T::metadata_static().id().0 as usize)
             .as_mut()
             .unwrap()
@@ -185,13 +185,13 @@ impl Store {
         entity_index: usize,
         val: &dyn Component,
     ) {
-        if self.data.get(metadata.id().0 as usize).unwrap().is_none() {
-            self.data
+        if self.cols.get(metadata.id().0 as usize).unwrap().is_none() {
+            self.cols
                 .get_mut(metadata.id().0 as usize)
                 .unwrap()
-                .replace(ComponentList::new(metadata.size()));
+                .replace(Column::new(metadata.size()));
         }
-        self.data
+        self.cols
             .get_mut(metadata.id().0 as usize)
             .as_mut()
             .unwrap()
@@ -201,40 +201,37 @@ impl Store {
     }
 
     pub unsafe fn destroy<T: Component + 'static>(&self, entity_index: usize) {
-        if let Some(list) = self
-            .data
+        if let Some(col) = self
+            .cols
             .get(T::metadata_static().id().0 as usize)
             .unwrap()
             .as_ref()
         {
-            list.destroy::<T>(entity_index)
+            col.destroy::<T>(entity_index)
         }
     }
 
-    pub unsafe fn add_component_list_by_id(&mut self, id: ComponentId, size: usize) {
-        self.data
+    pub unsafe fn add_column_by_id(&mut self, id: ComponentId, size: usize) {
+        self.cols
             .get_mut(id.0 as usize)
             .unwrap()
-            .replace(ComponentList::new(size));
+            .replace(Column::new(size));
     }
 
-    pub unsafe fn get_component_list_by_id(&self, id: ComponentId) -> Option<&ComponentList> {
-        self.data.get(id.0 as usize).unwrap().as_ref()
+    pub unsafe fn get_column_by_id(&self, id: ComponentId) -> Option<&Column> {
+        self.cols.get(id.0 as usize).unwrap().as_ref()
     }
 
-    pub unsafe fn get_component_list<T: Component + 'static>(&self) -> Option<&ComponentList> {
-        self.get_component_list_by_id(T::metadata_static().id())
+    pub unsafe fn get_column<T: Component + 'static>(&self) -> Option<&Column> {
+        self.get_column_by_id(T::metadata_static().id())
     }
 
-    pub unsafe fn get_component_list_by_id_mut(
-        &mut self,
-        id: ComponentId,
-    ) -> Option<&mut ComponentList> {
-        self.data.get_mut(id.0 as usize).unwrap().as_mut()
+    pub unsafe fn get_column_by_id_mut(&mut self, id: ComponentId) -> Option<&mut Column> {
+        self.cols.get_mut(id.0 as usize).unwrap().as_mut()
     }
 
     pub fn has_component<T: Component + 'static>(&self) -> bool {
-        self.data
+        self.cols
             .get(T::metadata_static().id().0 as usize)
             .unwrap()
             .is_some()
@@ -243,7 +240,7 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use super::{ComponentList, Store};
+    use super::{Column, Table};
     use crate::{self as ecs, component, Component};
 
     #[component]
@@ -253,36 +250,36 @@ mod tests {
     struct B(&'static str);
 
     #[test]
-    fn list_write_read() {
-        let mut list = ComponentList::new(A::metadata_static().size());
+    fn column_write_read() {
+        let mut col = Column::new(A::metadata_static().size());
         unsafe {
-            list.write(0, A(0));
-            list.write(1, A(1));
-            list.write(100000, A(2));
+            col.write(0, A(0));
+            col.write(1, A(1));
+            col.write(100000, A(2));
 
-            assert_eq!(list.read::<A>(0).0, 0);
-            assert_eq!(list.read::<A>(1).0, 1);
-            assert_eq!(list.read::<A>(100000).0, 2);
+            assert_eq!(col.read::<A>(0).0, 0);
+            assert_eq!(col.read::<A>(1).0, 1);
+            assert_eq!(col.read::<A>(100000).0, 2);
         }
     }
 
     #[test]
-    fn store_write_read() {
-        let mut store = Store::new();
+    fn table_write_read() {
+        let mut table = Table::new();
         unsafe {
-            store.write(0, A(100u32));
-            store.write(0, B("100"));
-            store.write(1, A(101u32));
-            store.write(1, B("101"));
-            store.write(100000, A(102u32));
-            store.write(100000, B("102"));
+            table.write(0, A(100u32));
+            table.write(0, B("100"));
+            table.write(1, A(101u32));
+            table.write(1, B("101"));
+            table.write(100000, A(102u32));
+            table.write(100000, B("102"));
 
-            assert_eq!(store.read_mut::<A>(0).0, 100u32);
-            assert_eq!(store.read_mut::<B>(0).0, "100");
-            assert_eq!(store.read_mut::<A>(1).0, 101u32);
-            assert_eq!(store.read_mut::<B>(1).0, "101");
-            assert_eq!(store.read_mut::<A>(100000).0, 102u32);
-            assert_eq!(store.read_mut::<B>(100000).0, "102");
+            assert_eq!(table.read_mut::<A>(0).0, 100u32);
+            assert_eq!(table.read_mut::<B>(0).0, "100");
+            assert_eq!(table.read_mut::<A>(1).0, 101u32);
+            assert_eq!(table.read_mut::<B>(1).0, "101");
+            assert_eq!(table.read_mut::<A>(100000).0, 102u32);
+            assert_eq!(table.read_mut::<B>(100000).0, "102");
         }
     }
 }
