@@ -367,11 +367,7 @@ macro_rules! impl_bundle {
 
             #[allow(private_interfaces)]
             fn write_self_to_table(self, index: usize, table: &mut Table) {
-                unsafe {
-                    $(
-                        table.write_any(self.$idx.metadata(), index, &self.$idx);
-                    )+
-                };
+                unsafe { $(table.write_any(self.$idx.metadata(), index, &self.$idx);)+ };
                 mem::forget(self);
             }
         }
@@ -850,7 +846,7 @@ impl<C: Ctx> World<C> {
                     .insert(new_archetype, Table::new())
                     .is_some()
                 {
-                    panic!("")
+                    panic!()
                 }
 
                 let table = unsafe { self.inner().tables.get_mut(archetype).unwrap_unchecked() };
