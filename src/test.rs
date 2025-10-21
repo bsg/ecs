@@ -120,64 +120,6 @@ mod tests {
     }
 
     #[test]
-    fn spawn_inside_system() {
-        let world: World<Ctx> = World::new();
-
-        world.spawn(C("1".into()));
-        world.spawn(C("2".into()));
-        world.spawn(C("3".into()));
-
-        world.run(|c: &C| {
-            world.spawn(A(str::parse::<u32>(c.0.unwrap()).unwrap()));
-        });
-
-        let mut sum = 0;
-        world.run(|a: &A| {
-            sum += a.0;
-        });
-
-        assert_eq!(sum, 6);
-    }
-
-    #[test]
-    fn spawn_inside_system_subset() {
-        let world: World<Ctx> = World::new();
-
-        world.spawn((A(1), C("1".into())));
-        world.spawn((A(2), C("2".into())));
-        world.spawn((A(3), C("3".into())));
-
-        world.run(|c: &C| {
-            world.spawn(A(str::parse::<u32>(c.0.unwrap()).unwrap() * 10));
-        });
-
-        let mut sum = 0;
-        world.run(|a: &A| {
-            sum += a.0;
-        });
-
-        assert_eq!(sum, 66);
-    }
-
-    #[test]
-    fn spawn_inside_system_same_archetype() {
-        let world: World<Ctx> = World::new();
-
-        world.spawn(A(1));
-
-        world.run(|_: &A| {
-            world.spawn(A(2));
-        });
-
-        let mut sum = 0;
-        world.run(|a: &A| {
-            sum += a.0;
-        });
-
-        assert_eq!(sum, 3);
-    }
-
-    #[test]
     fn despawn() {
         let world: World<Ctx> = World::new();
 

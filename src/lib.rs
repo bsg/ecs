@@ -61,14 +61,24 @@ impl Deref for Entity {
 
 impl Component for Entity {
     fn metadata(&self) -> Metadata {
-        Metadata::new(ComponentId(0), mem::size_of::<Entity>(), "Entity")
+        Metadata::new(
+            ComponentId(0),
+            mem::size_of::<Entity>(),
+            mem::align_of::<Entity>(),
+            "Entity",
+        )
     }
 
     fn metadata_static() -> Metadata
     where
         Self: Sized,
     {
-        Metadata::new(ComponentId(0), mem::size_of::<Entity>(), "Entity")
+        Metadata::new(
+            ComponentId(0),
+            mem::size_of::<Entity>(),
+            mem::align_of::<Entity>(),
+            "Entity",
+        )
     }
 }
 
@@ -526,6 +536,14 @@ impl<C: Ctx> World<C> {
     }
 
     pub fn spawn<B: Bundle>(&self, bundle: B) -> Entity {
+        if self
+            .inner()
+            .num_systems_running
+            .load(std::sync::atomic::Ordering::Relaxed)
+            > 0
+        {
+            panic!("Tried to spawn while a system is running ")
+        }
         let entity = self
             .inner()
             .free_entities
@@ -768,6 +786,7 @@ impl<C: Ctx> World<C> {
                                 new_table.add_column_by_id(
                                     ComponentId(id as u32),
                                     col.get_component_size(),
+                                    metadata.align(),
                                 )
                             }
                         }
@@ -864,6 +883,7 @@ impl<C: Ctx> World<C> {
                                 new_table.add_column_by_id(
                                     ComponentId(id as u32),
                                     col.get_component_size(),
+                                    metadata.align(),
                                 )
                             }
                         }

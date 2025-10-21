@@ -9,15 +9,17 @@ use crate::component::{Component, ComponentId, Metadata};
 
 pub(crate) struct Column {
     data: *mut u8,
-    stride: usize,
+    item_size: usize,
+    item_align: usize,
     cap: usize,
 }
 
 impl Column {
-    pub fn new(item_size: usize) -> Self {
+    pub fn new(item_size: usize, item_align: usize) -> Self {
         Column {
             data: null_mut(),
-            stride: item_size,
+            item_size,
+            item_align,
             cap: 0,
         }
     }
@@ -28,11 +30,15 @@ impl Column {
         if idx >= self.cap {
             let new_cap = if idx == 0 { INITIAL_CAP } else { idx * 2 };
             if self.data.is_null() {
-                let layout = std::alloc::Layout::array::<u8>(self.stride * new_cap).unwrap();
+                let layout =
+                    std::alloc::Layout::from_size_align(self.item_size * new_cap, self.item_align)
+                        .unwrap();
                 self.data = std::alloc::alloc(layout);
             } else {
-                let layout = std::alloc::Layout::array::<u8>(self.stride * self.cap).unwrap();
-                self.data = std::alloc::realloc(self.data, layout, self.stride * new_cap);
+                let layout =
+                    std::alloc::Layout::from_size_align(self.item_size * self.cap, self.item_align)
+                        .unwrap();
+                self.data = std::alloc::realloc(self.data, layout, self.item_size * new_cap);
             }
             if self.data.is_null() {
                 todo!()
@@ -43,32 +49,32 @@ impl Column {
 
     #[inline(always)]
     pub unsafe fn read<T: Component + 'static>(&self, idx: usize) -> &T {
-        &*self.data.add(self.stride * idx).cast::<T>()
+        &*self.data.cast::<T>().add(idx)
     }
 
     #[allow(clippy::mut_from_ref)]
     #[inline(always)]
     pub unsafe fn read_mut<T: Component + 'static>(&self, idx: usize) -> &mut T {
-        &mut *self.data.add(self.stride * idx).cast::<T>()
+        &mut *self.data.cast::<T>().add(idx)
     }
 
     #[inline(always)]
     pub unsafe fn write<T: Component + 'static>(&mut self, idx: usize, val: T) {
         self.grow(idx);
-        self.data.add(self.stride * idx).cast::<T>().write(val);
+        self.data.cast::<T>().add(idx).write(val);
     }
 
     #[inline(always)]
     pub unsafe fn write_any(&mut self, idx: usize, val: &dyn Component) {
         self.grow(idx);
         self.data
-            .add(self.stride * idx)
+            .add(self.item_size * idx)
             .copy_from_nonoverlapping(mem::transmute_copy(&val), val.metadata().size());
     }
 
     #[inline(always)]
     pub unsafe fn destroy<T: Component + 'static>(&self, idx: usize) {
-        drop_in_place::<T>(self.data.add(self.stride * idx).cast());
+        drop_in_place::<T>(self.data.add(self.item_size * idx).cast());
     }
 
     #[inline(always)]
@@ -78,20 +84,29 @@ impl Column {
         src_idx: usize,
         dst_idx: usize,
     ) {
-        if src.stride != dst.stride {
+        if src.item_size != dst.item_size {
             panic!()
         }
 
         dst.grow(dst_idx);
-        let ptr_src = src.data.add(src.stride * src_idx);
-        let ptr_dst = dst.data.add(dst.stride * dst_idx);
+        let ptr_src = src.data.add(src.item_size * src_idx);
+        let ptr_dst = dst.data.add(dst.item_size * dst_idx);
 
-        ptr_dst.copy_from_nonoverlapping(ptr_src, dst.stride);
+        ptr_dst.copy_from_nonoverlapping(ptr_src, dst.item_size);
     }
 
     #[inline(always)]
     pub unsafe fn get_component_size(&self) -> usize {
-        self.stride
+        self.item_size
+    }
+}
+
+impl Drop for Column {
+    fn drop(&mut self) {
+        let layout =
+            std::alloc::Layout::from_size_align(self.item_size * self.cap, self.item_align)
+                .unwrap();
+        unsafe { std::alloc::dealloc(self.data, layout) };
     }
 }
 
@@ -168,7 +183,10 @@ impl Table {
             self.cols
                 .get_mut(T::metadata_static().id().0 as usize)
                 .unwrap()
-                .replace(Column::new(T::metadata_static().size()));
+                .replace(Column::new(
+                    T::metadata_static().size(),
+                    T::metadata_static().align(),
+                ));
         }
         self.cols
             .get_mut(T::metadata_static().id().0 as usize)
@@ -189,7 +207,7 @@ impl Table {
             self.cols
                 .get_mut(metadata.id().0 as usize)
                 .unwrap()
-                .replace(Column::new(metadata.size()));
+                .replace(Column::new(metadata.size(), metadata.align()));
         }
         self.cols
             .get_mut(metadata.id().0 as usize)
@@ -211,11 +229,11 @@ impl Table {
         }
     }
 
-    pub unsafe fn add_column_by_id(&mut self, id: ComponentId, size: usize) {
+    pub unsafe fn add_column_by_id(&mut self, id: ComponentId, size: usize, align: usize) {
         self.cols
             .get_mut(id.0 as usize)
             .unwrap()
-            .replace(Column::new(size));
+            .replace(Column::new(size, align));
     }
 
     pub unsafe fn get_column_by_id(&self, id: ComponentId) -> Option<&Column> {
@@ -251,7 +269,7 @@ mod tests {
 
     #[test]
     fn column_write_read() {
-        let mut col = Column::new(A::metadata_static().size());
+        let mut col = Column::new(A::metadata_static().size(), A::metadata_static().align());
         unsafe {
             col.write(0, A(0));
             col.write(1, A(1));

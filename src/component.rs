@@ -23,12 +23,18 @@ pub trait Component {
 pub struct Metadata {
     id: ComponentId,
     size: usize,
+    align: usize,
     name: &'static str,
 }
 
 impl Metadata {
-    pub fn new(id: ComponentId, size: usize, name: &'static str) -> Self {
-        Metadata { id, size, name }
+    pub fn new(id: ComponentId, size: usize, align: usize, name: &'static str) -> Self {
+        Metadata {
+            id,
+            size,
+            align,
+            name,
+        }
     }
 
     pub fn id(&self) -> ComponentId {
@@ -37,6 +43,10 @@ impl Metadata {
 
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    pub fn align(&self) -> usize {
+        self.align
     }
 
     pub fn name(&self) -> &'static str {

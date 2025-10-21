@@ -33,11 +33,11 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
         quote! {
             impl #generics ecs::component::Component for #ident #generics {
                 fn metadata(&self) -> ecs::component::Metadata{
-                    ecs::component::Metadata::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), #ident_str)
+                    ecs::component::Metadata::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), std::mem::align_of::<Self>(),#ident_str)
                 }
 
                 fn metadata_static() -> ecs::component::Metadata {
-                    ecs::component::Metadata::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), #ident_str)
+                    ecs::component::Metadata::new(ecs::component::ComponentId(#id), std::mem::size_of::<Self>(), std::mem::align_of::<Self>(),#ident_str)
                 }
             }
         }.into_token_stream()
