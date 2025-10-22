@@ -535,15 +535,13 @@ impl<C: Ctx> World<C> {
         unsafe { &mut *self.inner }
     }
 
-    pub fn spawn<B: Bundle>(&self, bundle: B) -> Entity {
-        if self
-            .inner()
-            .num_systems_running
-            .load(std::sync::atomic::Ordering::Relaxed)
-            > 0
-        {
-            panic!("Tried to spawn while a system is running ")
-        }
+    // TODO make this safer using a spawn queue?
+    // TODO flesh out this doc
+    /// # SAFETY
+    ///
+    /// Spawning inside a system where the archetype of the spawned entity is a subset of the query archetype
+    /// is problematic
+    pub unsafe fn spawn<B: Bundle>(&self, bundle: B) -> Entity {
         let entity = self
             .inner()
             .free_entities
@@ -941,8 +939,27 @@ impl<C: Ctx> World<C> {
         }
     }
 
+    /// # SAFETY
+    ///
+    /// It's very easy to mutably alias by keeping references (in)to Ctx
+    /// ```
+    /// let ctx = world.ctx();
+    /// let foo = &world.ctx().foo; // UB
+    /// *foo = ctx.bar;
+    /// ```
+    /// ---
+    /// ```
+    /// let foo = &mut world.ctx().foo;
+    /// let bar = &world.ctx().bar; // UB
+    /// *foo = *bar;
+    /// ```
+    /// ---
+    /// But this is fine:
+    /// ```
+    /// world.ctx().foo = world.ctx().bar;
+    /// ```
     #[allow(clippy::mut_from_ref)]
-    pub fn ctx(&self) -> &mut C {
+    pub unsafe fn ctx(&self) -> &mut C {
         unsafe { (&mut *self.inner).ctx.assume_init_mut() }
     }
 
@@ -984,7 +1001,17 @@ impl<C: Ctx> World<C> {
         }
     }
 
-    pub fn run<'a, Params>(&'a self, mut f: impl System<'a, Params, C>) {
+    /// # SAFETY
+    ///
+    /// - Nesting queries with a subset relationship could result in mutable aliasing
+    /// ```
+    ///   world.run(|foo: &mut Foo, bar: &Bar|) {
+    ///      world.run(|foo: &Foo /* UB */|) {
+    ///         /// ...
+    ///      }
+    ///   }
+    /// ```
+    pub unsafe fn run<'a, Params>(&'a self, mut f: impl System<'a, Params, C>) {
         self.increment_num_running_systems();
         f.run(self);
         let num_running_systems = self.decrement_num_running_systems();
