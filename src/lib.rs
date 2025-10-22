@@ -7,8 +7,6 @@ mod test;
 
 use archetype::Archetype;
 use component::{ComponentId, Metadata};
-use serde::Deserialize;
-use serde::Serialize;
 use table::{Column, Table};
 
 use core::panic;
@@ -48,7 +46,7 @@ impl ArchetypeBuilder {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Entity(pub u32);
 
 impl Deref for Entity {

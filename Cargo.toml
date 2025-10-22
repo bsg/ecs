@@ -7,4 +7,3 @@ edition = "2021"
 
 [dependencies]
 ecs-codegen = { path = "./src/codegen" }
-serde = {version = "1.0.218", features = ["derive"]}
