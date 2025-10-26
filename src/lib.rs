@@ -10,7 +10,6 @@ use component::{ComponentId, Metadata};
 use table::{Column, Table};
 
 use core::panic;
-use std::mem::MaybeUninit;
 use std::sync::atomic::AtomicUsize;
 use std::{
     collections::{BTreeSet, HashMap},
@@ -80,14 +79,14 @@ impl Component for Entity {
     }
 }
 
-trait QueryParam<'a, T, A, C: Ctx> {
-    fn access(world: &'a World<C>, col: Option<&'a Column>, index: usize) -> A;
+trait QueryParam<'a, T, A> {
+    fn access(world: &'a World, col: Option<&'a Column>, index: usize) -> A;
     fn match_archetype(archetype: &Archetype) -> bool;
 }
 
-impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a T, C> for &'a T {
+impl<'a, T: Component + 'static> QueryParam<'a, T, &'a T> for &'a T {
     #[inline(always)]
-    fn access(_: &World<C>, col: Option<&'a Column>, index: usize) -> &'a T {
+    fn access(_: &World, col: Option<&'a Column>, index: usize) -> &'a T {
         unsafe { col.unwrap_unchecked().read::<T>(index) }
     }
 
@@ -96,9 +95,9 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a T, C> for &'a T {
     }
 }
 
-impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a mut T, C> for &'a mut T {
+impl<'a, T: Component + 'static> QueryParam<'a, T, &'a mut T> for &'a mut T {
     #[inline(always)]
-    fn access(_: &World<C>, col: Option<&'a Column>, index: usize) -> &'a mut T {
+    fn access(_: &World, col: Option<&'a Column>, index: usize) -> &'a mut T {
         unsafe { col.unwrap_unchecked().read_mut::<T>(index) }
     }
 
@@ -107,9 +106,9 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, &'a mut T, C> for &'a
     }
 }
 
-impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a T>, C> for Option<&'a T> {
+impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a T>> for Option<&'a T> {
     #[inline(always)]
-    fn access(_: &World<C>, col: Option<&'a Column>, index: usize) -> Option<&'a T> {
+    fn access(_: &World, col: Option<&'a Column>, index: usize) -> Option<&'a T> {
         unsafe { col.map(|col| col.read::<T>(index)) }
     }
 
@@ -118,11 +117,9 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a T>, C> for
     }
 }
 
-impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Option<&'a mut T>, C>
-    for Option<&'a mut T>
-{
+impl<'a, T: Component + 'static> QueryParam<'a, T, Option<&'a mut T>> for Option<&'a mut T> {
     #[inline(always)]
-    fn access(_: &World<C>, col: Option<&'a Column>, index: usize) -> Option<&'a mut T> {
+    fn access(_: &World, col: Option<&'a Column>, index: usize) -> Option<&'a mut T> {
         unsafe { col.map(|col| col.read_mut::<T>(index)) }
     }
 
@@ -135,9 +132,9 @@ pub struct With<T: Component> {
     marker: PhantomData<T>,
 }
 
-impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, With<T>, C> for With<T> {
+impl<'a, T: Component + 'static> QueryParam<'a, T, With<T>> for With<T> {
     #[inline(always)]
-    fn access(_: &'a World<C>, _: Option<&'a Column>, _: usize) -> With<T> {
+    fn access(_: &'a World, _: Option<&'a Column>, _: usize) -> With<T> {
         With {
             marker: PhantomData,
         }
@@ -152,9 +149,9 @@ pub struct Without<T: Component> {
     marker: PhantomData<T>,
 }
 
-impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Without<T>, C> for Without<T> {
+impl<'a, T: Component + 'static> QueryParam<'a, T, Without<T>> for Without<T> {
     #[inline(always)]
-    fn access(_: &'a World<C>, _: Option<&'a Column>, _: usize) -> Without<T> {
+    fn access(_: &'a World, _: Option<&'a Column>, _: usize) -> Without<T> {
         Without {
             marker: PhantomData,
         }
@@ -165,19 +162,19 @@ impl<'a, T: Component + 'static, C: Ctx> QueryParam<'a, T, Without<T>, C> for Wi
     }
 }
 
-pub trait System<'a, Params, C: Ctx> {
-    fn run(&mut self, world: &'a World<C>);
+pub trait System<'a, Params> {
+    fn run(&mut self, world: &'a World);
 }
 
 macro_rules! impl_system {
     ($(($param:ident, $t:ident, $col:ident)),+) => {
-        impl<'a, $($param,)+ $($t,)+ F, C: Ctx> System<'a, ($($param,)+ $($t,)+), C> for F
+        impl<'a, $($param,)+ $($t,)+ F> System<'a, ($($param,)+ $($t,)+)> for F
         where
             $($t: Component + 'static,)+
-            $($param: QueryParam<'a, $t, $param, C>,)+
+            $($param: QueryParam<'a, $t, $param>,)+
             F: FnMut($($param,)+),
         {
-            fn run(&mut self, world: &'a World<C>) {
+            fn run(&mut self, world: &'a World) {
                 unsafe {
                     for (archetype, table) in world.inner().tables.iter_mut() {
                         if $($param::match_archetype(archetype)) &&+ && true {
@@ -355,8 +352,6 @@ impl_system!(
     (A16, T16, r16)
 );
 
-pub trait Ctx {}
-
 pub trait Bundle {
     fn set_archetype(&self, archetype: &mut Archetype);
     #[allow(private_interfaces)]
@@ -480,24 +475,23 @@ enum Cmd {
     RemoveComponent((Entity, Metadata)),
 }
 
-struct WorldInner<C: Ctx> {
+struct WorldInner {
     entities: Vec<Option<(Archetype, usize)>>,
     tables: HashMap<Archetype, Table>,
     free_entities: BTreeSet<Entity>,
-    ctx: MaybeUninit<C>, // TODO drop
     cmd_queue: Vec<Cmd>,
     num_systems_running: AtomicUsize,
 }
 
-pub struct World<C: Ctx> {
-    inner: *mut WorldInner<C>,
+pub struct World {
+    inner: *mut WorldInner,
 }
 
-unsafe impl<C: Ctx> Send for World<C> {}
-unsafe impl<C: Ctx> Sync for World<C> {}
+unsafe impl Send for World {}
+unsafe impl Sync for World {}
 
 #[allow(dead_code)]
-impl<C: Ctx> World<C> {
+impl World {
     pub fn new() -> Self {
         World {
             inner: Box::into_raw(Box::new(WorldInner {
@@ -505,7 +499,6 @@ impl<C: Ctx> World<C> {
                 entities: vec![None],
                 tables: HashMap::new(),
                 free_entities: BTreeSet::new(),
-                ctx: MaybeUninit::<C>::uninit(),
                 cmd_queue: Vec::default(),
                 num_systems_running: AtomicUsize::new(0),
             })),
@@ -524,12 +517,8 @@ impl<C: Ctx> World<C> {
         self.inner = ptr.cast();
     }
 
-    pub fn set_ctx(&self, ctx: C) {
-        unsafe { (&mut *self.inner).ctx = MaybeUninit::new(ctx) }
-    }
-
     #[allow(clippy::mut_from_ref)]
-    fn inner(&self) -> &mut WorldInner<C> {
+    fn inner(&self) -> &mut WorldInner {
         unsafe { &mut *self.inner }
     }
 
@@ -937,30 +926,6 @@ impl<C: Ctx> World<C> {
         }
     }
 
-    /// # SAFETY
-    ///
-    /// It's very easy to mutably alias by keeping references (in)to Ctx
-    /// ```
-    /// let ctx = world.ctx();
-    /// let foo = &world.ctx().foo; // UB
-    /// *foo = ctx.bar;
-    /// ```
-    /// ---
-    /// ```
-    /// let foo = &mut world.ctx().foo;
-    /// let bar = &world.ctx().bar; // UB
-    /// *foo = *bar;
-    /// ```
-    /// ---
-    /// But this is fine:
-    /// ```
-    /// world.ctx().foo = world.ctx().bar;
-    /// ```
-    #[allow(clippy::mut_from_ref)]
-    pub unsafe fn ctx(&self) -> &mut C {
-        unsafe { (&mut *self.inner).ctx.assume_init_mut() }
-    }
-
     fn increment_num_running_systems(&self) -> usize {
         let mut current = self
             .inner()
@@ -1003,13 +968,13 @@ impl<C: Ctx> World<C> {
     ///
     /// - Nesting queries with a subset relationship could result in mutable aliasing
     /// ```
-    ///   world.run(|foo: &mut Foo, bar: &Bar|) {
-    ///      world.run(|foo: &Foo /* UB */|) {
-    ///         /// ...
-    ///      }
-    ///   }
+    ///   world.run(|foo: &mut Foo, bar: &Bar| {
+    ///      world.run(|foo: &Foo /* UB */| {
+    ///          ...
+    ///      });
+    ///   });
     /// ```
-    pub unsafe fn run<'a, Params>(&'a self, mut f: impl System<'a, Params, C>) {
+    pub unsafe fn run<'a, Params>(&'a self, mut f: impl System<'a, Params>) {
         self.increment_num_running_systems();
         f.run(self);
         let num_running_systems = self.decrement_num_running_systems();
@@ -1065,7 +1030,7 @@ impl<C: Ctx> World<C> {
     }
 }
 
-impl<C: Ctx> Default for World<C> {
+impl Default for World {
     fn default() -> Self {
         Self::new()
     }

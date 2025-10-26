@@ -16,16 +16,9 @@ mod tests {
     #[component]
     struct Z {}
 
-    #[allow(dead_code)]
-    struct Ctx {
-        foo: usize,
-        bar: usize,
-    }
-    impl ecs::Ctx for Ctx {}
-
     #[test]
     fn get_component() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         let entity_ref = unsafe { world.spawn((A(42u32), B(false), C(Some("a")))) };
         assert_eq!(entity_ref.0, 1);
@@ -54,7 +47,7 @@ mod tests {
 
     #[test]
     fn get_nonexisting_component() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         let e = unsafe { world.spawn(A(42u32)) };
         assert!(world.component::<B>(e).is_none());
@@ -63,7 +56,7 @@ mod tests {
 
     #[test]
     fn query() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         unsafe {
             world.spawn((A(1u32), C(Some("1"))));
@@ -86,7 +79,7 @@ mod tests {
 
     #[test]
     fn query_with_optional() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         unsafe {
             world.spawn((B(true), A(1)));
@@ -112,7 +105,7 @@ mod tests {
 
     #[test]
     fn query_with_entity() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         unsafe {
             world.spawn((B(true), A(1)));
@@ -131,7 +124,7 @@ mod tests {
 
     #[test]
     fn despawn() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         unsafe {
             world.spawn(A(1));
@@ -152,7 +145,7 @@ mod tests {
 
     #[test]
     fn reuse_entity() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         unsafe {
             world.spawn(A(1));
@@ -169,7 +162,7 @@ mod tests {
 
     #[test]
     fn with_without() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         unsafe {
             world.spawn((A(1), B(false)));
@@ -193,7 +186,7 @@ mod tests {
 
     #[test]
     fn add_remove_component() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         unsafe {
             let e1 = world.spawn(A(1));
@@ -227,7 +220,7 @@ mod tests {
 
     #[test]
     fn for_each_with_archetype() {
-        let world: World<Ctx> = World::new();
+        let world: World = World::new();
 
         unsafe {
             world.spawn(A(1));
