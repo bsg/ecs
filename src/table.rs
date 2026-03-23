@@ -7,6 +7,8 @@ use std::{
 
 use crate::component::{Component, ComponentId, Metadata};
 
+pub type TableIdx = usize;
+
 pub(crate) struct Column {
     data: *mut u8,
     item_size: usize,

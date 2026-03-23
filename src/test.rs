@@ -5,6 +5,7 @@ mod tests {
     use crate::{Entity, World};
 
     #[component]
+    #[derive(Debug, Clone, Copy, PartialEq)]
     struct A(u32);
 
     #[component]
@@ -21,28 +22,33 @@ mod tests {
         let world: World = World::new();
 
         let entity_ref = unsafe { world.spawn((A(42u32), B(false), C(Some("a")))) };
-        assert_eq!(entity_ref.0, 1);
+        assert_eq!(entity_ref.idx, 1);
 
         let (_, index) = (*world.inner().entities.get(1).unwrap()).unwrap();
         assert_eq!(index, 0);
 
-        assert_eq!(world.component::<A>(Entity(1)).unwrap().0, 42);
-        assert!(!world.component::<B>(Entity(1)).unwrap().0);
-        assert_eq!(world.component::<C>(Entity(1)).unwrap().0, Some("a"));
+        let ent = Entity {
+            idx: 1,
+            generation: 0,
+        };
+
+        assert_eq!(world.component::<A>(ent).unwrap().0, 42);
+        assert!(!world.component::<B>(ent).unwrap().0);
+        assert_eq!(world.component::<C>(ent).unwrap().0, Some("a"));
 
         // repeat in different order
-        assert_eq!(world.component::<C>(Entity(1)).unwrap().0, Some("a"));
-        assert!(!world.component::<B>(Entity(1)).unwrap().0,);
-        assert_eq!(world.component::<A>(Entity(1)).unwrap().0, 42);
+        assert_eq!(world.component::<C>(ent).unwrap().0, Some("a"));
+        assert!(!world.component::<B>(ent).unwrap().0,);
+        assert_eq!(world.component::<A>(ent).unwrap().0, 42);
 
-        world.component_mut::<A>(Entity(1)).unwrap().0 = 123u32;
-        world.component_mut::<B>(Entity(1)).unwrap().0 = true;
+        world.component_mut::<A>(ent).unwrap().0 = 123u32;
+        world.component_mut::<B>(ent).unwrap().0 = true;
 
-        assert_eq!(world.component::<A>(Entity(1)).unwrap().0, 123u32);
-        assert!(world.component::<B>(Entity(1)).unwrap().0);
+        assert_eq!(world.component::<A>(ent).unwrap().0, 123u32);
+        assert!(world.component::<B>(ent).unwrap().0);
 
-        assert!(world.has_component::<A>(Entity(1)));
-        assert!(!world.has_component::<Z>(Entity(1)));
+        assert!(world.has_component::<A>(ent));
+        assert!(!world.has_component::<Z>(ent));
     }
 
     #[test]
@@ -115,7 +121,7 @@ mod tests {
 
             let mut sum = 0;
             world.run(|entity: &Entity, _: &B| {
-                sum += **entity - 1;
+                sum += entity.idx() - 1;
             });
 
             assert_eq!(sum, 6);
@@ -154,9 +160,24 @@ mod tests {
             world.spawn(A(4));
             world.spawn(A(5));
 
-            world.despawn(Entity(3));
-            assert_eq!(world.spawn(A(3)), Entity(3));
-            assert_eq!(world.spawn(A(6)), Entity(6));
+            world.despawn(Entity {
+                idx: 3,
+                generation: 0,
+            });
+            assert_eq!(
+                world.spawn(A(3)),
+                Entity {
+                    idx: 3,
+                    generation: 1
+                }
+            );
+            assert_eq!(
+                world.spawn(A(6)),
+                Entity {
+                    idx: 6,
+                    generation: 0
+                }
+            );
         }
     }
 
@@ -238,6 +259,21 @@ mod tests {
                 acc += world.component::<A>(ent).unwrap().0;
             });
             assert_eq!(10, acc);
+        }
+    }
+
+    #[test]
+    fn use_after_despawn() {
+        let world: World = World::new();
+        unsafe {
+            let ent = world.spawn(A(1));
+            assert_eq!(Some(A(1)), world.component::<A>(ent).copied());
+            assert_eq!(ent, *world.component::<Entity>(ent).unwrap());
+
+            world.despawn(ent);
+            let ent_new = world.spawn(A(2));
+            assert_eq!(None, world.component::<A>(ent).copied());
+            assert_eq!(ent_new, *world.component::<Entity>(ent_new).unwrap());
         }
     }
 }

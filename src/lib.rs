@@ -15,10 +15,10 @@ use std::{
     collections::{BTreeSet, HashMap},
     marker::PhantomData,
     mem,
-    ops::Deref,
 };
 
 use crate::component::Component;
+use crate::table::TableIdx;
 
 #[derive(Clone, Copy)]
 pub struct ArchetypeBuilder(Archetype);
@@ -46,13 +46,25 @@ impl ArchetypeBuilder {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Entity(pub u32);
+pub struct Entity {
+    idx: u32,
+    generation: u32,
+}
 
-impl Deref for Entity {
-    type Target = u32;
+impl Entity {
+    pub fn new(idx: u32, gen: u32) -> Self {
+        Self {
+            idx,
+            generation: gen,
+        }
+    }
 
-    fn deref(&self) -> &u32 {
-        &self.0
+    pub fn idx(&self) -> u32 {
+        self.idx
+    }
+
+    pub fn generation(&self) -> u32 {
+        self.generation
     }
 }
 
@@ -182,7 +194,7 @@ macro_rules! impl_system {
                             let entities = table.get_column::<Entity>().unwrap_unchecked();
                             $(let $col= table.get_column::<$t>();)+
                             for item_idx in 0..len {
-                                if entities.read::<Entity>(item_idx).0 != 0 {
+                                if entities.read::<Entity>(item_idx).idx != 0 {
                                     self(
                                         $($param::access(world, $col, item_idx),)+
                                     );
@@ -476,9 +488,10 @@ enum Cmd {
 }
 
 struct WorldInner {
-    entities: Vec<Option<(Archetype, usize)>>,
+    entities: Vec<Option<(Archetype, TableIdx)>>,
+    generations: Vec<u32>,
     tables: HashMap<Archetype, Table>,
-    free_entities: BTreeSet<Entity>,
+    free_slots: BTreeSet<Entity>,
     cmd_queue: Vec<Cmd>,
     num_systems_running: AtomicUsize,
 }
@@ -497,8 +510,9 @@ impl World {
             inner: Box::into_raw(Box::new(WorldInner {
                 // Entity(0) is used to mark deleted columns
                 entities: vec![None],
+                generations: vec![0],
                 tables: HashMap::new(),
-                free_entities: BTreeSet::new(),
+                free_slots: BTreeSet::new(),
                 cmd_queue: Vec::default(),
                 num_systems_running: AtomicUsize::new(0),
             })),
@@ -529,11 +543,20 @@ impl World {
     /// Spawning inside a system where the archetype of the spawned entity is a subset of the query archetype
     /// is problematic
     pub unsafe fn spawn<B: Bundle>(&self, bundle: B) -> Entity {
-        let entity = self
-            .inner()
-            .free_entities
-            .pop_first()
-            .unwrap_or(Entity(self.inner().entities.len() as u32));
+        let entity = self.inner().free_slots.pop_first().unwrap_or({
+            let idx = self.inner().entities.len();
+            let gen = match self.inner().generations.get_mut(idx) {
+                Some(gen) => *gen,
+                None => {
+                    self.inner().generations.push(0);
+                    0
+                }
+            };
+            Entity {
+                idx: idx as u32,
+                generation: gen,
+            }
+        });
 
         let mut archetype = Archetype::new();
 
@@ -550,7 +573,7 @@ impl World {
         let index = table.reserve_index();
         unsafe { table.write::<Entity>(index, entity) };
         bundle.write_self_to_table(index, table);
-        match self.inner().entities.get_mut(*entity as usize) {
+        match self.inner().entities.get_mut(entity.idx() as usize) {
             Some(p) => *p = Some((archetype, index)),
             None => self.inner().entities.push(Some((archetype, index))),
         }
@@ -560,11 +583,20 @@ impl World {
 
     // FIXME this shares a ton of code with spawn()
     pub fn spawn_from_slice_of_boxes(&self, bundle: &[Box<dyn Component>]) -> Entity {
-        let entity = self
-            .inner()
-            .free_entities
-            .pop_first()
-            .unwrap_or(Entity(self.inner().entities.len() as u32));
+        let entity = self.inner().free_slots.pop_first().unwrap_or({
+            let idx = self.inner().entities.len();
+            let gen = match self.inner().generations.get_mut(idx) {
+                Some(gen) => *gen,
+                None => {
+                    self.inner().generations.push(0);
+                    0
+                }
+            };
+            Entity {
+                idx: idx as u32,
+                generation: gen,
+            }
+        });
 
         let mut archetype = Archetype::new();
 
@@ -585,7 +617,7 @@ impl World {
         for item in bundle {
             unsafe { table.write_any(item.metadata(), index, &**item) };
         }
-        match self.inner().entities.get_mut(*entity as usize) {
+        match self.inner().entities.get_mut(entity.idx() as usize) {
             Some(p) => *p = Some((archetype, index)),
             None => self.inner().entities.push(Some((archetype, index))),
         }
@@ -612,12 +644,18 @@ impl World {
         unsafe { table.write::<Entity>(index, entity) };
         bundle.write_self_to_table(index, table);
 
-        if *entity as usize >= self.inner().entities.len() {
-            self.inner().entities.resize(*entity as usize + 1, None);
+        if entity.idx() as usize >= self.inner().entities.len() {
+            self.inner()
+                .entities
+                .resize(entity.idx() as usize + 1, None);
+            self.inner()
+                .generations
+                .resize(entity.idx() as usize + 1, 0);
             // TODO add the slots in the gap to the free list
         }
-        self.inner().entities.as_mut_slice()[*entity as usize] = Some((archetype, index));
-        self.inner().free_entities.remove(&entity);
+        self.inner().entities.as_mut_slice()[entity.idx() as usize] = Some((archetype, index));
+        self.inner().generations.as_mut_slice()[entity.idx() as usize] = entity.generation();
+        self.inner().free_slots.remove(&entity);
 
         entity
     }
@@ -647,44 +685,69 @@ impl World {
         for item in bundle {
             unsafe { table.write_any(item.metadata(), index, &**item) };
         }
-        match self.inner().entities.get_mut(*entity as usize) {
-            Some(p) => *p = Some((archetype, index)),
-            None => self.inner().entities.push(Some((archetype, index))),
+
+        if entity.idx() as usize >= self.inner().entities.len() {
+            self.inner()
+                .entities
+                .resize(entity.idx() as usize + 1, None);
+            self.inner()
+                .generations
+                .resize(entity.idx() as usize + 1, 0);
+            // TODO add the slots in the gap to the free list
         }
+        self.inner().entities.as_mut_slice()[entity.idx() as usize] = Some((archetype, index));
+        self.inner().generations.as_mut_slice()[entity.idx() as usize] = entity.generation();
+        self.inner().free_slots.remove(&entity);
 
         entity
     }
 
     pub fn despawn(&self, entity: Entity) {
-        if entity == Entity(0) {
+        if entity.idx == 0 {
             return;
         }
 
-        if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
+        if let Some(Some((archetype, index))) = self.inner().entities.get(entity.idx() as usize) {
             let table = unsafe { self.inner().tables.get_mut(archetype).unwrap_unchecked() };
 
-            *unsafe { table.read_mut::<Entity>(*index) } = Entity(0);
+            *unsafe { table.read_mut::<Entity>(*index) } = Entity {
+                idx: 0,
+                generation: 0,
+            };
             table.free_index(*index);
 
             *unsafe {
                 self.inner()
                     .entities
-                    .get_mut(*entity as usize)
+                    .get_mut(entity.idx() as usize)
                     .unwrap_unchecked()
             } = None;
 
-            self.inner().free_entities.insert(entity);
+            self.inner().free_slots.insert(Entity {
+                idx: entity.idx,
+                generation: entity.generation.overflowing_add(1).0,
+            });
+            let gen = self
+                .inner()
+                .generations
+                .get_mut(entity.idx as usize)
+                .unwrap();
+            *gen = gen.overflowing_add(1).0;
         }
     }
 
     pub fn has_component<T: Component + 'static>(&self, entity: Entity) -> bool {
-        if let Some(Some((archetype, _))) = self.inner().entities.get(*entity as usize) {
-            unsafe {
-                self.inner()
-                    .tables
-                    .get(archetype)
-                    .unwrap_unchecked()
-                    .has_component::<T>()
+        if let Some(Some((archetype, _))) = self.inner().entities.get(entity.idx as usize) {
+            if *self.inner().generations.get(entity.idx() as usize).unwrap() == entity.generation {
+                unsafe {
+                    self.inner()
+                        .tables
+                        .get(archetype)
+                        .unwrap_unchecked()
+                        .has_component::<T>()
+                }
+            } else {
+                false
             }
         } else {
             false
@@ -693,12 +756,19 @@ impl World {
 
     pub fn component<T: Component + 'static>(&self, entity: Entity) -> Option<&T> {
         unsafe {
-            if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
-                self.inner()
-                    .tables
-                    .get(archetype)
-                    .unwrap_unchecked()
-                    .try_read::<T>(*index)
+            if let Some(Some((archetype, index))) = self.inner().entities.get(entity.idx() as usize)
+            {
+                if *self.inner().generations.get(entity.idx() as usize).unwrap()
+                    == entity.generation
+                {
+                    self.inner()
+                        .tables
+                        .get(archetype)
+                        .unwrap_unchecked()
+                        .try_read::<T>(*index)
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -708,12 +778,19 @@ impl World {
     #[allow(clippy::mut_from_ref)]
     pub fn component_mut<T: Component + 'static>(&self, entity: Entity) -> Option<&mut T> {
         unsafe {
-            if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
-                self.inner()
-                    .tables
-                    .get_mut(archetype)
-                    .unwrap_unchecked()
-                    .try_read_mut::<T>(*index)
+            if let Some(Some((archetype, index))) = self.inner().entities.get(entity.idx() as usize)
+            {
+                if *self.inner().generations.get(entity.idx() as usize).unwrap()
+                    == entity.generation
+                {
+                    self.inner()
+                        .tables
+                        .get_mut(archetype)
+                        .unwrap_unchecked()
+                        .try_read_mut::<T>(*index)
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -743,7 +820,12 @@ impl World {
         metadata: Metadata,
         component: &dyn Component,
     ) -> Result<(), ()> {
-        if let Some(Some((archetype, index))) = self.inner().entities.get_mut(*entity as usize) {
+        if let Some(Some((archetype, index))) = self.inner().entities.get_mut(entity.idx() as usize)
+        {
+            if *self.inner().generations.get(entity.idx() as usize).unwrap() != entity.generation {
+                return Err(());
+            }
+
             let mut new_archetype = *archetype;
             new_archetype.set(component.metadata());
 
@@ -805,7 +887,15 @@ impl World {
                 }
             }
 
-            unsafe { table.write::<Entity>(*index, Entity(0)) };
+            unsafe {
+                table.write::<Entity>(
+                    *index,
+                    Entity {
+                        idx: 0,
+                        generation: 0,
+                    },
+                )
+            };
             table.free_index(*index);
 
             unsafe { new_table.write_any(metadata, new_index, component) };
@@ -835,7 +925,12 @@ impl World {
     }
 
     fn _remove_component(&self, entity: Entity, metadata: Metadata) -> Result<(), ()> {
-        if let Some(Some((archetype, index))) = self.inner().entities.get_mut(*entity as usize) {
+        if let Some(Some((archetype, index))) = self.inner().entities.get_mut(entity.idx() as usize)
+        {
+            if *self.inner().generations.get(entity.idx() as usize).unwrap() != entity.generation {
+                return Err(());
+            }
+
             let mut new_archetype = *archetype;
             new_archetype.unset(metadata);
 
@@ -902,7 +997,15 @@ impl World {
                 }
             }
 
-            unsafe { table.write::<Entity>(*index, Entity(0)) };
+            unsafe {
+                table.write::<Entity>(
+                    *index,
+                    Entity {
+                        idx: 0,
+                        generation: 0,
+                    },
+                )
+            };
             table.free_index(*index);
 
             *archetype = new_archetype;
@@ -914,14 +1017,18 @@ impl World {
         Result::Err(())
     }
 
+    // TODO return Result
     pub fn destroy_component<T: Component + 'static>(&self, entity: Entity) {
         unsafe {
-            if let Some(Some((archetype, index))) = self.inner().entities.get(*entity as usize) {
-                self.inner()
-                    .tables
-                    .get_mut(archetype)
-                    .unwrap_unchecked()
-                    .destroy::<T>(*index)
+            if let Some(Some((archetype, index))) = self.inner().entities.get(entity.idx as usize) {
+                if *self.inner().generations.get(entity.idx as usize).unwrap() == entity.generation
+                {
+                    self.inner()
+                        .tables
+                        .get_mut(archetype)
+                        .unwrap_unchecked()
+                        .destroy::<T>(*index)
+                }
             }
         }
     }
@@ -967,7 +1074,7 @@ impl World {
     /// # SAFETY
     ///
     /// - Nesting queries with a subset relationship could result in mutable aliasing
-    /// ```
+    /// ```ignore
     ///   world.run(|foo: &mut Foo, bar: &Bar| {
     ///      world.run(|foo: &Foo /* UB */| {
     ///          ...
@@ -1027,6 +1134,17 @@ impl World {
 
     pub fn num_entities_max(&self) -> u32 {
         self.inner().entities.len() as u32
+    }
+
+    pub fn for_each_with_entity(&self, mut f: impl FnMut(Entity)) {
+        for (idx, occupancy) in self.inner().entities.iter().enumerate() {
+            if idx > 0 && occupancy.is_some() {
+                f(Entity {
+                    idx: idx as u32,
+                    generation: *self.inner().generations.get(idx).unwrap(),
+                })
+            }
+        }
     }
 }
 
