@@ -805,6 +805,7 @@ impl World {
             == 0
         {
             let _ = self._add_component(entity, T::metadata_static(), &component);
+            std::mem::forget(component);
         } else {
             self.inner().cmd_queue.push(Cmd::AddComponent((
                 entity,
@@ -1087,17 +1088,17 @@ impl World {
         let num_running_systems = self.decrement_num_running_systems();
 
         if num_running_systems == 0 {
-            for cmd in &self.inner().cmd_queue {
+            while let Some(cmd) = self.inner().cmd_queue.pop() {
                 match cmd {
                     Cmd::AddComponent((ent, metadata, component)) => {
-                        let _ = self._add_component(*ent, *metadata, component.as_ref());
+                        let _ = self._add_component(ent, metadata, component.as_ref());
+                        Box::leak(component);
                     }
                     Cmd::RemoveComponent((ent, metadata)) => {
-                        let _ = self._remove_component(*ent, *metadata);
+                        let _ = self._remove_component(ent, metadata);
                     }
                 };
             }
-            self.inner().cmd_queue.clear();
         }
     }
 
