@@ -45,7 +45,7 @@ impl ArchetypeBuilder {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Entity {
     idx: u32,
     generation: u32,
@@ -88,6 +88,12 @@ impl Component for Entity {
             mem::align_of::<Entity>(),
             "Entity",
         )
+    }
+}
+
+impl std::fmt::Debug for Entity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}#{}", self.idx, self.generation))
     }
 }
 
@@ -368,6 +374,13 @@ pub trait Bundle {
     fn set_archetype(&self, archetype: &mut Archetype);
     #[allow(private_interfaces)]
     fn write_self_to_table(self, index: usize, table: &mut Table);
+}
+
+impl Bundle for () {
+    fn set_archetype(&self, _archetype: &mut Archetype) {}
+
+    #[allow(private_interfaces)]
+    fn write_self_to_table(self, _index: usize, _table: &mut Table) {}
 }
 
 macro_rules! impl_bundle {
