@@ -9,8 +9,6 @@ use archetype::Archetype;
 use component::{ComponentId, Metadata};
 use table::{Column, Table};
 
-use core::panic;
-use std::sync::atomic::AtomicUsize;
 use std::{
     collections::{BTreeSet, HashMap},
     marker::PhantomData,
@@ -495,18 +493,11 @@ impl_bundle!(
     (T12, 11)
 );
 
-enum Cmd {
-    AddComponent((Entity, Metadata, Box<dyn Component>)),
-    RemoveComponent((Entity, Metadata)),
-}
-
 struct WorldInner {
     entities: Vec<Option<(Archetype, TableIdx)>>,
     generations: Vec<u32>,
     tables: HashMap<Archetype, Table>,
     free_slots: BTreeSet<Entity>,
-    cmd_queue: Vec<Cmd>,
-    num_systems_running: AtomicUsize,
 }
 
 pub struct World {
@@ -526,8 +517,6 @@ impl World {
                 generations: vec![0],
                 tables: HashMap::new(),
                 free_slots: BTreeSet::new(),
-                cmd_queue: Vec::default(),
-                num_systems_running: AtomicUsize::new(0),
             })),
         }
     }
@@ -595,7 +584,7 @@ impl World {
     }
 
     // FIXME this shares a ton of code with spawn()
-    pub fn spawn_from_slice_of_boxes(&self, bundle: &[Box<dyn Component>]) -> Entity {
+    pub unsafe fn spawn_from_slice_of_boxes(&self, bundle: &[Box<dyn Component>]) -> Entity {
         let entity = self.inner().free_slots.pop_first().unwrap_or({
             let idx = self.inner().entities.len();
             let gen = match self.inner().generations.get_mut(idx) {
@@ -640,7 +629,7 @@ impl World {
 
     // TODO tests
     // TODO this is almost identical to spawn(). dedup
-    pub fn insert<B: Bundle>(&self, entity: Entity, bundle: B) -> Entity {
+    pub unsafe fn insert<B: Bundle>(&self, entity: Entity, bundle: B) -> Entity {
         let mut archetype = Archetype::new();
 
         bundle.set_archetype(&mut archetype);
@@ -674,7 +663,7 @@ impl World {
     }
 
     // TODO ton of code shared again...
-    pub fn insert_from_slice_of_boxes(
+    pub unsafe fn insert_from_slice_of_boxes(
         &self,
         entity: Entity,
         bundle: &[Box<dyn Component>],
@@ -715,7 +704,7 @@ impl World {
         entity
     }
 
-    pub fn despawn(&self, entity: Entity) {
+    pub unsafe fn despawn(&self, entity: Entity) {
         if entity.idx == 0 {
             return;
         }
@@ -810,22 +799,9 @@ impl World {
         }
     }
 
-    pub fn add_component<T: Component + 'static>(&self, entity: Entity, component: T) {
-        if self
-            .inner()
-            .num_systems_running
-            .load(std::sync::atomic::Ordering::Relaxed)
-            == 0
-        {
-            let _ = self._add_component(entity, T::metadata_static(), &component);
-            std::mem::forget(component);
-        } else {
-            self.inner().cmd_queue.push(Cmd::AddComponent((
-                entity,
-                T::metadata_static(),
-                Box::new(component),
-            )));
-        }
+    pub unsafe fn add_component<T: Component + 'static>(&self, entity: Entity, component: T) {
+        let _ = self._add_component(entity, T::metadata_static(), &component);
+        std::mem::forget(component);
     }
 
     fn _add_component(
@@ -923,19 +899,8 @@ impl World {
         Result::Err(())
     }
 
-    pub fn remove_component<T: Component + 'static>(&self, entity: Entity) {
-        if self
-            .inner()
-            .num_systems_running
-            .load(std::sync::atomic::Ordering::Relaxed)
-            == 0
-        {
-            let _ = self._remove_component(entity, T::metadata_static());
-        } else {
-            self.inner()
-                .cmd_queue
-                .push(Cmd::RemoveComponent((entity, T::metadata_static())));
-        }
+    pub unsafe fn remove_component<T: Component + 'static>(&self, entity: Entity) {
+        let _ = self._remove_component(entity, T::metadata_static());
     }
 
     fn _remove_component(&self, entity: Entity, metadata: Metadata) -> Result<(), ()> {
@@ -952,15 +917,10 @@ impl World {
                 return Result::Err(());
             }
 
-            if !self.inner().tables.contains_key(&new_archetype) {
-                if self
-                    .inner()
-                    .tables
-                    .insert(new_archetype, Table::new())
-                    .is_some()
-                {
-                    panic!()
-                }
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                self.inner().tables.entry(new_archetype)
+            {
+                e.insert(Table::new());
 
                 let table = unsafe { self.inner().tables.get_mut(archetype).unwrap_unchecked() };
                 let new_table = unsafe {
@@ -1032,7 +992,7 @@ impl World {
     }
 
     // TODO return Result
-    pub fn destroy_component<T: Component + 'static>(&self, entity: Entity) {
+    pub unsafe fn destroy_component<T: Component + 'static>(&self, entity: Entity) {
         unsafe {
             if let Some(Some((archetype, index))) = self.inner().entities.get(entity.idx as usize) {
                 if *self.inner().generations.get(entity.idx as usize).unwrap() == entity.generation
@@ -1043,44 +1003,6 @@ impl World {
                         .unwrap_unchecked()
                         .destroy::<T>(*index)
                 }
-            }
-        }
-    }
-
-    fn increment_num_running_systems(&self) -> usize {
-        let mut current = self
-            .inner()
-            .num_systems_running
-            .load(std::sync::atomic::Ordering::Relaxed);
-        loop {
-            let new = current + 1;
-            match self.inner().num_systems_running.compare_exchange(
-                current,
-                new,
-                std::sync::atomic::Ordering::Relaxed,
-                std::sync::atomic::Ordering::Relaxed,
-            ) {
-                Ok(_) => return new,
-                Err(v) => current = v,
-            }
-        }
-    }
-
-    fn decrement_num_running_systems(&self) -> usize {
-        let mut current = self
-            .inner()
-            .num_systems_running
-            .load(std::sync::atomic::Ordering::Relaxed);
-        loop {
-            let new = current - 1;
-            match self.inner().num_systems_running.compare_exchange(
-                current,
-                new,
-                std::sync::atomic::Ordering::Relaxed,
-                std::sync::atomic::Ordering::Relaxed,
-            ) {
-                Ok(_) => return new,
-                Err(v) => current = v,
             }
         }
     }
@@ -1096,27 +1018,11 @@ impl World {
     ///   });
     /// ```
     pub unsafe fn run<'a, Params>(&'a self, mut f: impl System<'a, Params>) {
-        self.increment_num_running_systems();
         f.run(self);
-        let num_running_systems = self.decrement_num_running_systems();
-
-        if num_running_systems == 0 {
-            while let Some(cmd) = self.inner().cmd_queue.pop() {
-                match cmd {
-                    Cmd::AddComponent((ent, metadata, component)) => {
-                        let _ = self._add_component(ent, metadata, component.as_ref());
-                        Box::leak(component);
-                    }
-                    Cmd::RemoveComponent((ent, metadata)) => {
-                        let _ = self._remove_component(ent, metadata);
-                    }
-                };
-            }
-        }
     }
 
     /// This could return a deleted entity so do not unwrap on ::component<..>(entity)
-    pub fn for_each_with_archetype(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
+    pub unsafe fn for_each_with_archetype(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
         unsafe {
             for (table_archetype, table) in self.inner().tables.iter_mut() {
                 if archetype == *table_archetype {
@@ -1132,7 +1038,11 @@ impl World {
 
     // TODO could be named better no?
     /// This could return a deleted entity so do not unwrap on ::component<..>(entity)
-    pub fn for_each_with_archetype_subset(&self, archetype: Archetype, mut f: impl FnMut(Entity)) {
+    pub unsafe fn for_each_with_archetype_subset(
+        &self,
+        archetype: Archetype,
+        mut f: impl FnMut(Entity),
+    ) {
         unsafe {
             for (table_archetype, table) in self.inner().tables.iter_mut() {
                 if archetype.subset_of(*table_archetype) {
@@ -1150,7 +1060,7 @@ impl World {
         self.inner().entities.len() as u32
     }
 
-    pub fn for_each_with_entity(&self, mut f: impl FnMut(Entity)) {
+    pub unsafe fn for_each_with_entity(&self, mut f: impl FnMut(Entity)) {
         for (idx, occupancy) in self.inner().entities.iter().enumerate() {
             if idx > 0 && occupancy.is_some() {
                 f(Entity {
