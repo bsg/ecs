@@ -43,6 +43,7 @@ impl ArchetypeBuilder {
     }
 }
 
+// TODO ensure this is being treated as a u64
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Entity {
     idx: u32,
@@ -50,11 +51,8 @@ pub struct Entity {
 }
 
 impl Entity {
-    pub fn new(idx: u32, gen: u32) -> Self {
-        Self {
-            idx,
-            generation: gen,
-        }
+    pub fn new(idx: u32, generation: u32) -> Self {
+        Self { idx, generation }
     }
 
     pub fn idx(&self) -> u32 {
@@ -547,8 +545,8 @@ impl World {
     pub unsafe fn spawn<B: Bundle>(&self, bundle: B) -> Entity {
         let entity = self.inner().free_slots.pop_first().unwrap_or({
             let idx = self.inner().entities.len();
-            let gen = match self.inner().generations.get_mut(idx) {
-                Some(gen) => *gen,
+            let generation = match self.inner().generations.get_mut(idx) {
+                Some(generation) => *generation,
                 None => {
                     self.inner().generations.push(0);
                     0
@@ -556,7 +554,7 @@ impl World {
             };
             Entity {
                 idx: idx as u32,
-                generation: gen,
+                generation,
             }
         });
 
@@ -587,8 +585,8 @@ impl World {
     pub unsafe fn spawn_from_slice_of_boxes(&self, bundle: &[Box<dyn Component>]) -> Entity {
         let entity = self.inner().free_slots.pop_first().unwrap_or({
             let idx = self.inner().entities.len();
-            let gen = match self.inner().generations.get_mut(idx) {
-                Some(gen) => *gen,
+            let generation = match self.inner().generations.get_mut(idx) {
+                Some(generation) => *generation,
                 None => {
                     self.inner().generations.push(0);
                     0
@@ -596,7 +594,7 @@ impl World {
             };
             Entity {
                 idx: idx as u32,
-                generation: gen,
+                generation,
             }
         });
 
@@ -729,12 +727,12 @@ impl World {
                 idx: entity.idx,
                 generation: entity.generation.overflowing_add(1).0,
             });
-            let gen = self
+            let generation = self
                 .inner()
                 .generations
                 .get_mut(entity.idx as usize)
                 .unwrap();
-            *gen = gen.overflowing_add(1).0;
+            *generation = generation.overflowing_add(1).0;
         }
     }
 
@@ -838,14 +836,14 @@ impl World {
 
                 for id in 0..128 {
                     unsafe {
-                        if let Some(col) = table.get_column_by_id(ComponentId(id as u32)) {
-                            if new_archetype.contains_id(id) {
-                                new_table.add_column_by_id(
-                                    ComponentId(id as u32),
-                                    col.get_component_size(),
-                                    metadata.align(),
-                                )
-                            }
+                        if let Some(col) = table.get_column_by_id(ComponentId(id as u32))
+                            && new_archetype.contains_id(id)
+                        {
+                            new_table.add_column_by_id(
+                                ComponentId(id as u32),
+                                col.get_component_size(),
+                                metadata.align(),
+                            )
                         }
                     };
                 }
@@ -932,14 +930,14 @@ impl World {
 
                 for id in 0..128usize {
                     unsafe {
-                        if let Some(col) = table.get_column_by_id(ComponentId(id as u32)) {
-                            if new_archetype.contains_id(id) {
-                                new_table.add_column_by_id(
-                                    ComponentId(id as u32),
-                                    col.get_component_size(),
-                                    metadata.align(),
-                                )
-                            }
+                        if let Some(col) = table.get_column_by_id(ComponentId(id as u32))
+                            && new_archetype.contains_id(id)
+                        {
+                            new_table.add_column_by_id(
+                                ComponentId(id as u32),
+                                col.get_component_size(),
+                                metadata.align(),
+                            )
                         }
                     };
                 }
@@ -994,15 +992,14 @@ impl World {
     // TODO return Result
     pub unsafe fn destroy_component<T: Component + 'static>(&self, entity: Entity) {
         unsafe {
-            if let Some(Some((archetype, index))) = self.inner().entities.get(entity.idx as usize) {
-                if *self.inner().generations.get(entity.idx as usize).unwrap() == entity.generation
-                {
-                    self.inner()
-                        .tables
-                        .get_mut(archetype)
-                        .unwrap_unchecked()
-                        .destroy::<T>(*index)
-                }
+            if let Some(Some((archetype, index))) = self.inner().entities.get(entity.idx as usize)
+                && *self.inner().generations.get(entity.idx as usize).unwrap() == entity.generation
+            {
+                self.inner()
+                    .tables
+                    .get_mut(archetype)
+                    .unwrap_unchecked()
+                    .destroy::<T>(*index)
             }
         }
     }

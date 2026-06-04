@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::{self as ecs, component, ArchetypeBuilder, With, Without};
+    use crate::{self as ecs, ArchetypeBuilder, With, Without, component};
 
     use crate::{Entity, World};
 

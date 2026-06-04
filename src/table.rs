@@ -35,12 +35,13 @@ impl Column {
                 let layout =
                     std::alloc::Layout::from_size_align(self.item_size * new_cap, self.item_align)
                         .unwrap();
-                self.data = std::alloc::alloc(layout);
+                self.data = unsafe { std::alloc::alloc(layout) };
             } else {
                 let layout =
                     std::alloc::Layout::from_size_align(self.item_size * self.cap, self.item_align)
                         .unwrap();
-                self.data = std::alloc::realloc(self.data, layout, self.item_size * new_cap);
+                self.data =
+                    unsafe { std::alloc::realloc(self.data, layout, self.item_size * new_cap) };
             }
             if self.data.is_null() {
                 todo!()
@@ -51,32 +52,36 @@ impl Column {
 
     #[inline(always)]
     pub unsafe fn read<T: Component + 'static>(&self, idx: usize) -> &T {
-        &*self.data.cast::<T>().add(idx)
+        unsafe { &*self.data.cast::<T>().add(idx) }
     }
 
     #[allow(clippy::mut_from_ref)]
     #[inline(always)]
     pub unsafe fn read_mut<T: Component + 'static>(&self, idx: usize) -> &mut T {
-        &mut *self.data.cast::<T>().add(idx)
+        unsafe { &mut *self.data.cast::<T>().add(idx) }
     }
 
     #[inline(always)]
     pub unsafe fn write<T: Component + 'static>(&mut self, idx: usize, val: T) {
-        self.grow(idx);
-        self.data.cast::<T>().add(idx).write(val);
+        unsafe {
+            self.grow(idx);
+            self.data.cast::<T>().add(idx).write(val);
+        }
     }
 
     #[inline(always)]
     pub unsafe fn write_any(&mut self, idx: usize, val: &dyn Component) {
-        self.grow(idx);
-        self.data
-            .add(self.item_size * idx)
-            .copy_from_nonoverlapping(mem::transmute_copy(&val), val.metadata().size());
+        unsafe {
+            self.grow(idx);
+            self.data
+                .add(self.item_size * idx)
+                .copy_from_nonoverlapping(mem::transmute_copy(&val), val.metadata().size());
+        }
     }
 
     #[inline(always)]
     pub unsafe fn destroy<T: Component + 'static>(&self, idx: usize) {
-        drop_in_place::<T>(self.data.add(self.item_size * idx).cast());
+        unsafe { drop_in_place::<T>(self.data.add(self.item_size * idx).cast()) };
     }
 
     #[inline(always)]
@@ -90,11 +95,13 @@ impl Column {
             panic!()
         }
 
-        dst.grow(dst_idx);
-        let ptr_src = src.data.add(src.item_size * src_idx);
-        let ptr_dst = dst.data.add(dst.item_size * dst_idx);
+        unsafe {
+            dst.grow(dst_idx);
+            let ptr_src = src.data.add(src.item_size * src_idx);
+            let ptr_dst = dst.data.add(dst.item_size * dst_idx);
 
-        ptr_dst.copy_from_nonoverlapping(ptr_src, dst.item_size);
+            ptr_dst.copy_from_nonoverlapping(ptr_src, dst.item_size);
+        }
     }
 
     #[inline(always)]
@@ -147,12 +154,14 @@ impl Table {
 
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn read_mut<T: Component + 'static>(&mut self, entity_index: usize) -> &mut T {
-        self.cols
-            .get_mut(T::metadata_static().id().0 as usize)
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .read_mut::<T>(entity_index)
+        unsafe {
+            self.cols
+                .get_mut(T::metadata_static().id().0 as usize)
+                .unwrap()
+                .as_mut()
+                .unwrap()
+                .read_mut::<T>(entity_index)
+        }
     }
 
     pub unsafe fn try_read<T: Component + 'static>(&self, entity_index: usize) -> Option<&T> {
@@ -160,7 +169,7 @@ impl Table {
             .get(T::metadata_static().id().0 as usize)
             .unwrap()
             .as_ref()
-            .map(|col| col.read::<T>(entity_index))
+            .map(|col| unsafe { col.read::<T>(entity_index) })
     }
 
     #[allow(clippy::mut_from_ref)]
@@ -172,7 +181,7 @@ impl Table {
             .get_mut(T::metadata_static().id().0 as usize)
             .unwrap()
             .as_mut()
-            .map(|col| col.read_mut::<T>(entity_index))
+            .map(|col| unsafe { col.read_mut::<T>(entity_index) })
     }
 
     pub unsafe fn write<T: Component + 'static>(&mut self, entity_index: usize, val: T) {
@@ -190,13 +199,15 @@ impl Table {
                     T::metadata_static().align(),
                 ));
         }
-        self.cols
-            .get_mut(T::metadata_static().id().0 as usize)
-            .as_mut()
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .write(entity_index, val);
+        unsafe {
+            self.cols
+                .get_mut(T::metadata_static().id().0 as usize)
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .unwrap()
+                .write(entity_index, val)
+        };
     }
 
     pub unsafe fn write_any(
@@ -211,13 +222,15 @@ impl Table {
                 .unwrap()
                 .replace(Column::new(metadata.size(), metadata.align()));
         }
-        self.cols
-            .get_mut(metadata.id().0 as usize)
-            .as_mut()
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .write_any(entity_index, val);
+        unsafe {
+            self.cols
+                .get_mut(metadata.id().0 as usize)
+                .as_mut()
+                .unwrap()
+                .as_mut()
+                .unwrap()
+                .write_any(entity_index, val)
+        };
     }
 
     pub unsafe fn destroy<T: Component + 'static>(&self, entity_index: usize) {
@@ -227,7 +240,7 @@ impl Table {
             .unwrap()
             .as_ref()
         {
-            col.destroy::<T>(entity_index)
+            unsafe { col.destroy::<T>(entity_index) }
         }
     }
 
@@ -243,7 +256,7 @@ impl Table {
     }
 
     pub unsafe fn get_column<T: Component + 'static>(&self) -> Option<&Column> {
-        self.get_column_by_id(T::metadata_static().id())
+        unsafe { self.get_column_by_id(T::metadata_static().id()) }
     }
 
     pub unsafe fn get_column_by_id_mut(&mut self, id: ComponentId) -> Option<&mut Column> {
@@ -261,7 +274,7 @@ impl Table {
 #[cfg(test)]
 mod tests {
     use super::{Column, Table};
-    use crate::{self as ecs, component, Component};
+    use crate::{self as ecs, Component, component};
 
     #[component]
     struct A(u32);
