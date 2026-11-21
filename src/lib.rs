@@ -494,6 +494,13 @@ impl_bundle!(
 struct WorldInner {
     entities: Vec<Option<(Archetype, TableIdx)>>,
     generations: Vec<u32>,
+    // TODO
+    // tables: Vec<((Archetype, Option<R>), Table)>
+    // where
+    // R = ((Component, Entity), ...repeated N times)
+    // with entity relations, we're gonna have plenty of fragmentation so we wanna avoid
+    // the HashMap iter cost
+    // also use ComponentId=0 for relation wildcard
     tables: HashMap<Archetype, Table>,
     free_slots: BTreeSet<Entity>,
 }
